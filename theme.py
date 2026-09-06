@@ -1,4 +1,4 @@
-﻿"""
+"""
 theme.py
 Файл визуальной темы приложения STRG (Строгий стиль QUIK).
 Прямоугольные кнопки (0px), тонкие рамки 1px, системные шрифты Tahoma (11px).
@@ -137,10 +137,10 @@ QPushButton.ReplayBtn {
     color: #cccccc;
     border: 1px solid #333333;
     border-radius: 0px;
-    padding: 2px 7px;
+    padding: 2px 5px;
     font-size: 11px;
     font-weight: bold;
-    height: 20px;
+    min-height: 20px;
 }
 QPushButton.ReplayBtn:hover {
     background-color: #2a2a2a;

@@ -1,4 +1,4 @@
-﻿"""
+"""
 gui_window.py
 Главное окно STRG:
 - Интерактивный график свечей по центру (pyqtgraph в стиле QUIK)
@@ -16,8 +16,8 @@ import os
 import numpy as np
 import pandas as pd
 from PyQt6.QtWidgets import (
-    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QPushButton, QLabel, QFrame, QButtonGroup, QSlider
+    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
+    QPushButton, QLabel, QFrame, QButtonGroup, QSlider, QSizePolicy
 )
 from PyQt6.QtCore import Qt, QTimer
 import theme
@@ -139,62 +139,105 @@ class MainWindow(QMainWindow):
         """Панель управления воспроизведением рынка под графиком."""
         panel = QFrame()
         panel.setObjectName("ReplayerPanel")
-        panel.setFixedHeight(38)
+        panel.setFixedHeight(62)
 
-        layout = QHBoxLayout(panel)
-        layout.setContentsMargins(6, 4, 6, 4)
-        layout.setSpacing(5)
+        main_layout = QHBoxLayout(panel)
+        main_layout.setContentsMargins(6, 4, 6, 4)
+        main_layout.setSpacing(6)
 
-        # Кнопки управления: В начало, Шаг назад, Старт/Пауза, Шаг вперед
+        # 1. Сетка кнопок управления (2 ряда)
+        btn_grid = QGridLayout()
+        btn_grid.setContentsMargins(0, 0, 0, 0)
+        btn_grid.setSpacing(3)
+
+        # Кнопка [ ⏹ В начало ] — занимает оба ряда
         self.btn_reset = QPushButton("⏹ В начало")
         self.btn_reset.setProperty("class", "ReplayBtn")
-        self.btn_reset.setFixedWidth(75)
+        self.btn_reset.setFixedWidth(88)
+        self.btn_reset.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding)
+        self.btn_reset.setToolTip("Перемотать в самое начало дня")
         self.btn_reset.clicked.connect(self.reset_replay)
-        layout.addWidget(self.btn_reset)
+        btn_grid.addWidget(self.btn_reset, 0, 0, 2, 1)
 
+        # Ряд 0: Шаг назад (тики)
         self.btn_step_back = QPushButton("⏮ Шаг")
         self.btn_step_back.setProperty("class", "ReplayBtn")
-        self.btn_step_back.setToolTip("Шаг назад (1 свеча)")
-        self.btn_step_back.setFixedWidth(55)
-        self.btn_step_back.clicked.connect(self.step_backward)
-        layout.addWidget(self.btn_step_back)
+        self.btn_step_back.setToolTip("Шаг назад (1 тик)")
+        self.btn_step_back.setFixedWidth(82)
+        self.btn_step_back.clicked.connect(self.step_tick_backward)
+        btn_grid.addWidget(self.btn_step_back, 0, 1)
 
+        # Ряд 1: Свеча назад (свечи)
+        self.btn_candle_back = QPushButton("⏮ Свеча")
+        self.btn_candle_back.setProperty("class", "ReplayBtn")
+        self.btn_candle_back.setToolTip("Свеча назад (на 1 свечу выбранного ТФ)")
+        self.btn_candle_back.setFixedWidth(82)
+        self.btn_candle_back.clicked.connect(self.step_candle_backward)
+        btn_grid.addWidget(self.btn_candle_back, 1, 1)
+
+        # Кнопка [ ▶ Старт ] — занимает оба ряда
         self.btn_play = QPushButton("▶ Старт")
         self.btn_play.setProperty("class", "ReplayBtn")
-        self.btn_play.setFixedWidth(65)
+        self.btn_play.setFixedWidth(82)
+        self.btn_play.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding)
+        self.btn_play.setToolTip("Запуск / Пауза воспроизведения (Пробел)")
         self.btn_play.clicked.connect(self.toggle_play)
-        layout.addWidget(self.btn_play)
+        btn_grid.addWidget(self.btn_play, 0, 2, 2, 1)
 
-        self.btn_step = QPushButton("⏭ Шаг")
-        self.btn_step.setProperty("class", "ReplayBtn")
-        self.btn_step.setToolTip("Шаг вперед (1 свеча)")
-        self.btn_step.setFixedWidth(55)
-        self.btn_step.clicked.connect(self.step_forward)
-        layout.addWidget(self.btn_step)
+        # Ряд 0: Шаг вперед (тики)
+        self.btn_step_fwd = QPushButton("⏭ Шаг")
+        self.btn_step_fwd.setProperty("class", "ReplayBtn")
+        self.btn_step_fwd.setToolTip("Шаг вперед (1 тик)")
+        self.btn_step_fwd.setFixedWidth(82)
+        self.btn_step_fwd.clicked.connect(self.step_tick_forward)
+        btn_grid.addWidget(self.btn_step_fwd, 0, 3)
+        self.btn_step = self.btn_step_fwd  # Алиас
 
-        # Слайдер перемотки времени
+        # Ряд 1: Свеча вперед (свечи)
+        self.btn_candle_fwd = QPushButton("⏭ Свеча")
+        self.btn_candle_fwd.setProperty("class", "ReplayBtn")
+        self.btn_candle_fwd.setToolTip("Свеча вперед (на 1 свечу выбранного ТФ)")
+        self.btn_candle_fwd.setFixedWidth(82)
+        self.btn_candle_fwd.clicked.connect(self.step_candle_forward)
+        btn_grid.addWidget(self.btn_candle_fwd, 1, 3)
+
+        main_layout.addLayout(btn_grid)
+
+        # 2. Правая часть: сверху длинный слайдер, снизу время, цена и скорости
+        right_box = QVBoxLayout()
+        right_box.setContentsMargins(0, 0, 0, 0)
+        right_box.setSpacing(2)
+
+        # Слайдер перемотки времени на всю ширину
         self.slider_time = QSlider(Qt.Orientation.Horizontal)
         self.slider_time.setMinimum(0)
         self.slider_time.setMaximum(100)
         self.slider_time.sliderMoved.connect(self.on_slider_moved)
-        layout.addWidget(self.slider_time, stretch=1)
+        right_box.addWidget(self.slider_time)
+
+        # Нижний ряд: цифровое табло + кнопки скоростей
+        bottom_row = QHBoxLayout()
+        bottom_row.setContentsMargins(0, 0, 0, 0)
+        bottom_row.setSpacing(5)
 
         # Табло времени и цены
         self.lbl_replay_time = QLabel("06:59:06")
         self.lbl_replay_time.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.lbl_replay_time.setStyleSheet(
             "font-size: 11px; font-weight: bold; color: #d4b106; background: #1a1708; "
-            "border: 1px solid #4a3e0f; padding: 2px 6px; min-width: 60px;"
+            "border: 1px solid #4a3e0f; padding: 2px 6px; min-width: 65px;"
         )
-        layout.addWidget(self.lbl_replay_time)
+        bottom_row.addWidget(self.lbl_replay_time)
 
         self.lbl_replay_price = QLabel("218 700")
         self.lbl_replay_price.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.lbl_replay_price.setStyleSheet(
             "font-size: 11px; font-weight: bold; color: #e0e0e0; background: #202020; "
-            "border: 1px solid #353535; padding: 2px 6px; min-width: 60px;"
+            "border: 1px solid #353535; padding: 2px 6px; min-width: 65px;"
         )
-        layout.addWidget(self.lbl_replay_price)
+        bottom_row.addWidget(self.lbl_replay_price)
+
+        bottom_row.addStretch()
 
         # Переключатели скорости
         self.speed_group = QButtonGroup(self)
@@ -204,13 +247,16 @@ class MainWindow(QMainWindow):
             btn = QPushButton(spd_label)
             btn.setCheckable(True)
             btn.setProperty("class", "ReplayBtn")
-            btn.setFixedWidth(36)
+            btn.setFixedWidth(42)
             btn.clicked.connect(lambda checked, s=spd_val: self.set_speed(s))
             self.speed_group.addButton(btn)
-            layout.addWidget(btn)
+            bottom_row.addWidget(btn)
             self.speed_buttons[spd_val] = btn
 
         self.speed_buttons[25].setChecked(True)
+        right_box.addLayout(bottom_row)
+
+        main_layout.addLayout(right_box, stretch=1)
 
         return panel
 
@@ -441,49 +487,92 @@ class MainWindow(QMainWindow):
         self.btn_play.setStyleSheet("")
         self.replay_timer.stop()
 
-    def step_forward(self):
-        """Шаг вперед на 1 свечу текущего ТФ."""
+    def step_tick_forward(self):
+        """Шаг вперед на 1 тик."""
         self.pause_replay()
+        if self.aggregator.df_ticks is None or self.aggregator.df_ticks.empty:
+            return
+        n_ticks = len(self.aggregator.df_ticks)
+        if self.current_tick_idx < n_ticks - 1:
+            self.current_tick_idx += 1
+            self.slider_time.blockSignals(True)
+            self.slider_time.setValue(self.current_tick_idx)
+            self.slider_time.blockSignals(False)
+            self.render_current_frame(auto_range=False)
+
+    def step_tick_backward(self):
+        """Шаг назад на 1 тик."""
+        self.pause_replay()
+        if self.aggregator.df_ticks is None or self.aggregator.df_ticks.empty:
+            return
+        if self.current_tick_idx > 0:
+            self.current_tick_idx -= 1
+            self.slider_time.blockSignals(True)
+            self.slider_time.setValue(self.current_tick_idx)
+            self.slider_time.blockSignals(False)
+            self.render_current_frame(auto_range=False)
+
+    def step_candle_forward(self):
+        """Шаг вперед на 1 свечу текущего таймфрейма."""
+        self.pause_replay()
+        if self.df_candles_full.empty or self.aggregator.df_ticks is None or self.aggregator.df_ticks.empty:
+            return
+
         df_ticks = self.aggregator.df_ticks
         curr_time = df_ticks.iloc[self.current_tick_idx]["DATETIME"]
         c_times = self.df_candles_full["time"].values
+        tick_times = df_ticks["DATETIME"].values
         target_np = np.datetime64(curr_time)
-        
-        # Ищем следующую свечу
-        c_idx = int(np.searchsorted(c_times, target_np, side="right"))
-        if c_idx < len(c_times):
-            next_candle_time = pd.Timestamp(c_times[c_idx])
-            next_tick_idx = int(np.searchsorted(df_ticks["DATETIME"].values, np.datetime64(next_candle_time), side="left"))
+
+        curr_candle_idx = int(np.searchsorted(c_times, target_np, side="right")) - 1
+        next_candle_idx = curr_candle_idx + 1
+
+        if next_candle_idx < len(c_times):
+            next_candle_time = c_times[next_candle_idx]
+            next_tick_idx = int(np.searchsorted(tick_times, next_candle_time, side="left"))
             self.current_tick_idx = min(next_tick_idx, len(df_ticks) - 1)
         else:
-            self.current_tick_idx = min(self.current_tick_idx + 100, len(df_ticks) - 1)
+            self.current_tick_idx = len(df_ticks) - 1
 
         self.slider_time.blockSignals(True)
         self.slider_time.setValue(self.current_tick_idx)
         self.slider_time.blockSignals(False)
         self.render_current_frame(auto_range=False)
 
-    def step_backward(self):
-        """Шаг назад на 1 свечу текущего ТФ."""
+    def step_candle_backward(self):
+        """Шаг назад на 1 свечу текущего таймфрейма (без пропусков и зависаний)."""
         self.pause_replay()
+        if self.df_candles_full.empty or self.aggregator.df_ticks is None or self.aggregator.df_ticks.empty:
+            return
+
         df_ticks = self.aggregator.df_ticks
         curr_time = df_ticks.iloc[self.current_tick_idx]["DATETIME"]
         c_times = self.df_candles_full["time"].values
+        tick_times = df_ticks["DATETIME"].values
         target_np = np.datetime64(curr_time)
-        
-        # Ищем предыдущую свечу
-        c_idx = int(np.searchsorted(c_times, target_np, side="left")) - 1
-        if c_idx >= 0:
-            prev_candle_time = pd.Timestamp(c_times[c_idx])
-            prev_tick_idx = int(np.searchsorted(df_ticks["DATETIME"].values, np.datetime64(prev_candle_time), side="left"))
+
+        curr_candle_idx = int(np.searchsorted(c_times, target_np, side="right")) - 1
+        prev_candle_idx = curr_candle_idx - 1
+
+        if prev_candle_idx >= 0:
+            prev_candle_time = c_times[prev_candle_idx]
+            prev_tick_idx = int(np.searchsorted(tick_times, prev_candle_time, side="left"))
             self.current_tick_idx = max(0, prev_tick_idx)
         else:
-            self.current_tick_idx = max(0, self.current_tick_idx - 100)
+            self.current_tick_idx = 0
 
         self.slider_time.blockSignals(True)
         self.slider_time.setValue(self.current_tick_idx)
         self.slider_time.blockSignals(False)
         self.render_current_frame(auto_range=False)
+
+    def step_forward(self):
+        """Совместимость: шаг вперед тиками."""
+        self.step_tick_forward()
+
+    def step_backward(self):
+        """Совместимость: шаг назад тиками."""
+        self.step_tick_backward()
 
     def reset_replay(self):
         self.pause_replay()
@@ -528,6 +617,14 @@ class MainWindow(QMainWindow):
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Space:
             self.toggle_play()
+        elif event.key() == Qt.Key.Key_Left:
+            self.step_candle_backward()
+        elif event.key() == Qt.Key.Key_Right:
+            self.step_candle_forward()
+        elif event.key() == Qt.Key.Key_Down:
+            self.step_tick_backward()
+        elif event.key() == Qt.Key.Key_Up:
+            self.step_tick_forward()
         else:
             super().keyPressEvent(event)
 
