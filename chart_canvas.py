@@ -1,4 +1,4 @@
-﻿"""
+"""
 chart_canvas.py
 График STRG в строгом стиле QUIK:
 - Тонкие контурные свечи (BarGraphItem + косметические фитили 1px)
@@ -217,15 +217,16 @@ class ChartCanvas(pg.PlotWidget):
             pi.addItem(line)
             self._chart_items.append(line)
 
-            # Прямоугольная плашка на конце отрезка
+            # Прямоугольная плашка посередине отрезка линии
+            idx_mid = (idx_start + idx_end) / 2.0
             badge = pg.TextItem(
                 text=f" {lvl.get('label', f'Fractal {int(price)}')} ",
                 color="#ffffff",
                 fill=pg.mkBrush("#e5a93c"),
-                anchor=(0, 0.5)
+                anchor=(0.5, 0.5)
             )
             badge.setFont(badge_font)
-            badge.setPos(idx_end + 0.1, price)
+            badge.setPos(idx_mid, price)
             pi.addItem(badge)
             self._chart_items.append(badge)
 
