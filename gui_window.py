@@ -344,6 +344,11 @@ class MainWindow(QMainWindow):
         self.btn_restart.clicked.connect(self.reset_replay)
         layout.addWidget(self.btn_restart)
 
+        self.btn_show_all = QPushButton("👁 Показать все")
+        self.btn_show_all.setObjectName("BtnShowAll")
+        self.btn_show_all.clicked.connect(self.show_all)
+        layout.addWidget(self.btn_show_all)
+
         layout.addStretch()
 
         # Перезаходы
@@ -581,6 +586,23 @@ class MainWindow(QMainWindow):
         self.slider_time.setValue(0)
         self.slider_time.blockSignals(False)
         self.render_current_frame(auto_range=False)
+
+    def show_all(self):
+        """Возвращает график в стартовое положение: конец дня, все свечи, полный автоскейл."""
+        self.pause_replay()
+        if self.aggregator.df_ticks is None or self.aggregator.df_ticks.empty:
+            return
+
+        n_ticks = len(self.aggregator.df_ticks)
+        self.current_tick_idx = n_ticks - 1
+
+        self.slider_time.blockSignals(True)
+        self.slider_time.setValue(self.current_tick_idx)
+        self.slider_time.blockSignals(False)
+
+        self.render_current_frame(auto_range=True)
+        self.chart_canvas.getPlotItem().autoRange()
+        self.lbl_status.setText("Статус: Показан весь торговый день (стартовое состояние)")
 
     def set_speed(self, speed_val):
         self.speed_multiplier = speed_val

@@ -204,4 +204,19 @@ QPushButton#BtnRestart:hover {
     background-color: #45202a;
     color: #ffffff;
 }
+
+/* Кнопка 'Показать все' */
+QPushButton#BtnShowAll {
+    background-color: #172823;
+    color: #cccccc;
+    border: 1px solid #234237;
+    border-radius: 0px;
+    padding: 5px;
+    font-weight: bold;
+    font-size: 11px;
+}
+QPushButton#BtnShowAll:hover {
+    background-color: #1e362e;
+    color: #ffffff;
+}
 """
