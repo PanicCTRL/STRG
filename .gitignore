@@ -1,0 +1,19 @@
+﻿# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+
+# Data files (large tick files)
+*.txt
+*.csv
+*.bin
+
+# Keep documentation and markdown
+!*.md
+
+# IDE & OS
+.vscode/
+.idea/
+Thumbs.db
+*.log
