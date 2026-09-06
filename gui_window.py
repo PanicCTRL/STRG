@@ -344,7 +344,7 @@ class MainWindow(QMainWindow):
         self.btn_restart.clicked.connect(self.reset_replay)
         layout.addWidget(self.btn_restart)
 
-        self.btn_show_all = QPushButton("👁 Показать все")
+        self.btn_show_all = QPushButton("Показать все")
         self.btn_show_all.setObjectName("BtnShowAll")
         self.btn_show_all.clicked.connect(self.show_all)
         layout.addWidget(self.btn_show_all)
