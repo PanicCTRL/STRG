@@ -57,7 +57,29 @@ class ChartCanvas(pg.PlotWidget):
         self.h_line = None
         self.crosshair_label = None
 
+        self.visibility = {
+            "candles": True,
+            "current_price": True,
+            "crosshair": True,
+            "classic_fractals": True,
+            "fractal_levels": True,
+            "level_labels": True,
+            "levels_active_only": False,
+            "real_trades": True,
+            "real_attempts": True,
+            "real_sl": True,
+            "real_tp": True,
+            "filter_profitable": True,
+            "filter_loss": True,
+            "virt_trades": True,
+            "virt_attempts": True,
+        }
+
         self._setup_style()
+
+    def update_visibility(self, config):
+        """Обновляет параметры видимости элементов графика."""
+        self.visibility.update(config)
 
     def _setup_style(self):
         """Строгий стиль QUIK Dark."""
@@ -121,6 +143,15 @@ class ChartCanvas(pg.PlotWidget):
             self.crosshair_label.setVisible(False)
 
     def _on_mouse_moved(self, pos):
+        if not self.visibility.get("crosshair", True):
+            if self.v_line:
+                self.v_line.setVisible(False)
+            if self.h_line:
+                self.h_line.setVisible(False)
+            if self.crosshair_label:
+                self.crosshair_label.setVisible(False)
+            return
+
         pi = self.getPlotItem()
         vb = pi.vb
         if not vb.sceneBoundingRect().contains(pos):
@@ -206,63 +237,68 @@ class ChartCanvas(pg.PlotWidget):
         down_mask = ~up_mask
 
         # ===============================
-        # 1. ФИТИЛИ (1px косметические линии)
+        # 1. ФИТИЛИ И ТЕЛА СВЕЧЕЙ
         # ===============================
-        wick_x = np.repeat(idx, 2)
-        wick_y = np.column_stack([lows, highs]).flatten()
-        wick_pen = pg.mkPen(color="#999999", width=1)
-        wick_pen.setCosmetic(True)
-        wick_item = pg.PlotCurveItem(wick_x, wick_y, connect="pairs", pen=wick_pen)
-        pi.addItem(wick_item)
-        self._chart_items.append(wick_item)
+        show_candles = self.visibility.get("candles", True)
+        if show_candles:
+            # 1. ФИТИЛИ (1px косметические линии)
+            wick_x = np.repeat(idx, 2)
+            wick_y = np.column_stack([lows, highs]).flatten()
+            wick_pen = pg.mkPen(color="#999999", width=1)
+            wick_pen.setCosmetic(True)
+            wick_item = pg.PlotCurveItem(wick_x, wick_y, connect="pairs", pen=wick_pen)
+            pi.addItem(wick_item)
+            self._chart_items.append(wick_item)
 
-        # ===============================
-        # 2. ТЕЛА СВЕЧЕЙ (BarGraphItem)
-        # ===============================
-        bar_width = 0.55
+            # 2. ТЕЛА СВЕЧЕЙ (BarGraphItem)
+            bar_width = 0.55
 
-        # Растущие свечи
-        if up_mask.any():
-            up_idx = idx[up_mask]
-            up_open = opens[up_mask]
-            up_close = closes[up_mask]
-            up_heights = up_close - up_open
-            up_heights[up_heights < 0.5] = 0.5
+            # Растущие свечи
+            if up_mask.any():
+                up_idx = idx[up_mask]
+                up_open = opens[up_mask]
+                up_close = closes[up_mask]
+                up_heights = up_close - up_open
+                up_heights[up_heights < 0.5] = 0.5
 
-            up_pen = pg.mkPen(color="#cccccc", width=1)
-            up_pen.setCosmetic(True)
-            up_bars = pg.BarGraphItem(
-                x=up_idx, y=up_open, height=up_heights, width=bar_width,
-                pen=up_pen, brush=pg.mkBrush("#cccccc")
-            )
-            pi.addItem(up_bars)
-            self._chart_items.append(up_bars)
+                up_pen = pg.mkPen(color="#cccccc", width=1)
+                up_pen.setCosmetic(True)
+                up_bars = pg.BarGraphItem(
+                    x=up_idx, y=up_open, height=up_heights, width=bar_width,
+                    pen=up_pen, brush=pg.mkBrush("#cccccc")
+                )
+                pi.addItem(up_bars)
+                self._chart_items.append(up_bars)
 
-        # Падающие свечи
-        if down_mask.any():
-            dn_idx = idx[down_mask]
-            dn_open = opens[down_mask]
-            dn_close = closes[down_mask]
-            dn_heights = dn_open - dn_close
-            dn_heights[dn_heights < 0.5] = 0.5
+            # Падающие свечи
+            if down_mask.any():
+                dn_idx = idx[down_mask]
+                dn_open = opens[down_mask]
+                dn_close = closes[down_mask]
+                dn_heights = dn_open - dn_close
+                dn_heights[dn_heights < 0.5] = 0.5
 
-            dn_pen = pg.mkPen(color="#555555", width=1)
-            dn_pen.setCosmetic(True)
-            dn_bars = pg.BarGraphItem(
-                x=dn_idx, y=dn_close, height=dn_heights, width=bar_width,
-                pen=dn_pen, brush=pg.mkBrush("#444444")
-            )
-            pi.addItem(dn_bars)
-            self._chart_items.append(dn_bars)
+                dn_pen = pg.mkPen(color="#555555", width=1)
+                dn_pen.setCosmetic(True)
+                dn_bars = pg.BarGraphItem(
+                    x=dn_idx, y=dn_close, height=dn_heights, width=bar_width,
+                    pen=dn_pen, brush=pg.mkBrush("#444444")
+                )
+                pi.addItem(dn_bars)
+                self._chart_items.append(dn_bars)
 
         # ===============================
         # 3. ЛИНИЯ ТЕКУЩЕЙ ЦЕНЫ
         # ===============================
         n = len(df_candles)
         last_price = closes[-1]
-        self.current_price_line.setValue(last_price)
-        self.price_label.setText(f" {int(last_price):,} ".replace(",", " "))
-        self.price_label.setPos(n + 1, last_price)
+        show_cur_price = self.visibility.get("current_price", True)
+        self.current_price_line.setVisible(show_cur_price)
+        self.price_label.setVisible(show_cur_price)
+        if show_cur_price:
+            self.current_price_line.setValue(last_price)
+            self.price_label.setText(f" {int(last_price):,} ".replace(",", " "))
+            self.price_label.setPos(n + 1, last_price)
 
         if auto_range:
             price_range = highs.max() - lows.min()
@@ -276,6 +312,9 @@ class ChartCanvas(pg.PlotWidget):
         - Зелёный треугольник ▲ (FRACTAL_UP) над максимумом подтверждённой свечи
         - Красный треугольник ▼ (FRACTAL_DOWN) под минимумом подтверждённой свечи
         """
+        if not self.visibility.get("classic_fractals", True):
+            return
+
         if df_candles is None or len(df_candles) < 5:
             return
 
@@ -327,6 +366,9 @@ class ChartCanvas(pg.PlotWidget):
         Отрисовывает горизонтальные пунктирные линии фракталов с бейджами.
         Линия тянется от момента появления до снятия (или до текущей свечи).
         """
+        if not self.visibility.get("fractal_levels", True):
+            return
+
         if not levels or df_candles.empty:
             return
 
@@ -346,6 +388,11 @@ class ChartCanvas(pg.PlotWidget):
             if st > curr_time:
                 continue
 
+            # Фильтр "Только активные в памяти" (скрыть забытые / пробитые)
+            if self.visibility.get("levels_active_only", False):
+                if et < curr_time:
+                    continue
+
             idx_start = int(np.searchsorted(c_times, st, side="right")) - 1
             idx_start = max(0, min(idx_start, n_bars - 1))
 
@@ -362,17 +409,18 @@ class ChartCanvas(pg.PlotWidget):
             self._chart_items.append(line)
 
             # Прямоугольная плашка посередине отрезка линии
-            idx_mid = (idx_start + idx_end) / 2.0
-            badge = pg.TextItem(
-                text=f" {lvl.get('label', f'Fractal {int(price)}')} ",
-                color="#ffffff",
-                fill=pg.mkBrush("#e5a93c"),
-                anchor=(0.5, 0.5)
-            )
-            badge.setFont(badge_font)
-            badge.setPos(idx_mid, price)
-            pi.addItem(badge)
-            self._chart_items.append(badge)
+            if self.visibility.get("level_labels", True):
+                idx_mid = (idx_start + idx_end) / 2.0
+                badge = pg.TextItem(
+                    text=f" {lvl.get('label', f'Fractal {int(price)}')} ",
+                    color="#ffffff",
+                    fill=pg.mkBrush("#e5a93c"),
+                    anchor=(0.5, 0.5)
+                )
+                badge.setFont(badge_font)
+                badge.setPos(idx_mid, price)
+                pi.addItem(badge)
+                self._chart_items.append(badge)
 
     def render_trades(self, trades, df_candles):
         """
@@ -417,42 +465,63 @@ class ChartCanvas(pg.PlotWidget):
             direction = tr["direction"]
             attempt = tr.get("attempt", 1)
 
+            # Фильтрация по результату
+            if is_real:
+                close_reason = tr.get("close_reason")
+                if close_reason == "TP" and not self.visibility.get("filter_profitable", True):
+                    continue
+                if close_reason == "SL" and not self.visibility.get("filter_loss", True):
+                    continue
+            else:
+                if not self.visibility.get("virt_trades", True) and not self.visibility.get("virt_attempts", True):
+                    continue
+
             # Отрисовка стрелки и номера перезахода
             if direction == "BUY":
                 x_pos = idx - 0.22
                 if is_real:
-                    rb_x.append(x_pos)
-                    rb_y.append(p)
+                    if self.visibility.get("real_trades", True):
+                        rb_x.append(x_pos)
+                        rb_y.append(p)
                     lbl_col = "#2ecc71"
+                    show_att = self.visibility.get("real_attempts", True)
                 else:
-                    vb_x.append(x_pos)
-                    vb_y.append(p)
+                    if self.visibility.get("virt_trades", True):
+                        vb_x.append(x_pos)
+                        vb_y.append(p)
                     lbl_col = "#f1c40f"
+                    show_att = self.visibility.get("virt_attempts", True)
 
-                # Цифра перезахода под стрелкой — ВСЕГДА
-                lbl = pg.TextItem(text=f"#{attempt}", color=lbl_col, anchor=(0.5, -0.4))
-                lbl.setFont(att_font)
-                lbl.setPos(x_pos, p)
-                pi.addItem(lbl)
-                self._chart_items.append(lbl)
+                # Цифра перезахода под стрелкой
+                if show_att:
+                    lbl = pg.TextItem(text=f"#{attempt}", color=lbl_col, anchor=(0.5, -0.4))
+                    lbl.setFont(att_font)
+                    lbl.setPos(x_pos, p)
+                    pi.addItem(lbl)
+                    self._chart_items.append(lbl)
 
             else:
                 x_pos = idx + 0.22
                 if is_real:
-                    rs_x.append(x_pos)
-                    rs_y.append(p)
+                    if self.visibility.get("real_trades", True):
+                        rs_x.append(x_pos)
+                        rs_y.append(p)
                     lbl_col = "#e74c3c"
+                    show_att = self.visibility.get("real_attempts", True)
                 else:
-                    vs_x.append(x_pos)
-                    vs_y.append(p)
+                    if self.visibility.get("virt_trades", True):
+                        vs_x.append(x_pos)
+                        vs_y.append(p)
                     lbl_col = "#9b59b6"
+                    show_att = self.visibility.get("virt_attempts", True)
 
-                # Цифра перезахода над стрелкой — ВСЕГДА
-                lbl = pg.TextItem(text=f"#{attempt}", color=lbl_col, anchor=(0.5, 1.4))
-                lbl.setFont(att_font)
-                lbl.setPos(x_pos, p)
-                pi.addItem(lbl)
-                self._chart_items.append(lbl)
+                # Цифра перезахода над стрелкой
+                if show_att:
+                    lbl = pg.TextItem(text=f"#{attempt}", color=lbl_col, anchor=(0.5, 1.4))
+                    lbl.setFont(att_font)
+                    lbl.setPos(x_pos, p)
+                    pi.addItem(lbl)
+                    self._chart_items.append(lbl)
 
             # Отрисовка линий SL и TP для реальных сделок
             if is_real and tr.get("sl") and tr.get("tp"):
@@ -471,14 +540,16 @@ class ChartCanvas(pg.PlotWidget):
                 x_end = max(idx + 0.6, float(idx_close))
 
                 # Линия Stop Loss
-                line_sl = pg.PlotCurveItem(x=[idx, x_end], y=[sl_price, sl_price], pen=pen_sl)
-                pi.addItem(line_sl)
-                self._chart_items.append(line_sl)
+                if self.visibility.get("real_sl", True):
+                    line_sl = pg.PlotCurveItem(x=[idx, x_end], y=[sl_price, sl_price], pen=pen_sl)
+                    pi.addItem(line_sl)
+                    self._chart_items.append(line_sl)
 
                 # Линия Take Profit
-                line_tp = pg.PlotCurveItem(x=[idx, x_end], y=[tp_price, tp_price], pen=pen_tp)
-                pi.addItem(line_tp)
-                self._chart_items.append(line_tp)
+                if self.visibility.get("real_tp", True):
+                    line_tp = pg.PlotCurveItem(x=[idx, x_end], y=[tp_price, tp_price], pen=pen_tp)
+                    pi.addItem(line_tp)
+                    self._chart_items.append(line_tp)
 
         # Стрелки сделок
         if rb_x:

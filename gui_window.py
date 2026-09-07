@@ -17,7 +17,8 @@ import numpy as np
 import pandas as pd
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
-    QPushButton, QLabel, QFrame, QButtonGroup, QSlider, QSizePolicy
+    QPushButton, QLabel, QFrame, QButtonGroup, QSlider, QSizePolicy,
+    QTreeWidget, QTreeWidgetItem
 )
 from PyQt6.QtCore import Qt, QTimer
 import theme
@@ -31,7 +32,7 @@ class MainWindow(QMainWindow):
         super().__init__()
 
         self.setWindowTitle("STRG — Strategy Monitor & Market Replayer")
-        self.resize(1200, 750)
+        self.resize(1280, 780)
 
         # Движок данных
         self.current_tf = "5M"
@@ -264,11 +265,11 @@ class MainWindow(QMainWindow):
         """Создает правую панель управления в строгом стиле QUIK."""
         panel = QFrame()
         panel.setObjectName("RightPanel")
-        panel.setFixedWidth(155)
+        panel.setFixedWidth(205)
 
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(6, 8, 6, 8)
-        layout.setSpacing(6)
+        layout.setSpacing(5)
 
         # Блок режимов
         lbl_mode_title = QLabel("РЕЖИМ")
@@ -293,9 +294,9 @@ class MainWindow(QMainWindow):
         self.mode_buttons["TEST"].setChecked(True)
         layout.addLayout(mode_layout)
 
-        layout.addSpacing(4)
+        layout.addSpacing(2)
 
-        # Таймфреймы
+        # Таймфреймы (2 ряда для компактности)
         lbl_tf_title = QLabel("ТАЙМФРЕЙМ")
         lbl_tf_title.setStyleSheet("font-size: 10px; font-weight: bold; color: #666666; border: none;")
         layout.addWidget(lbl_tf_title)
@@ -303,18 +304,22 @@ class MainWindow(QMainWindow):
         self.tf_group = QButtonGroup(self)
         self.tf_buttons = {}
 
-        for tf_name in ["1M", "3M", "5M", "15M", "1H"]:
+        tf_grid = QGridLayout()
+        tf_grid.setSpacing(2)
+        tf_list = [("1M", 0, 0), ("3M", 0, 1), ("5M", 0, 2), ("15M", 1, 0), ("1H", 1, 1)]
+        for tf_name, r, c in tf_list:
             btn = QPushButton(tf_name)
             btn.setCheckable(True)
             btn.setProperty("class", "TfBtn")
             btn.clicked.connect(lambda checked, name=tf_name: self.on_tf_clicked(name))
             self.tf_group.addButton(btn)
-            layout.addWidget(btn)
+            tf_grid.addWidget(btn, r, c)
             self.tf_buttons[tf_name] = btn
 
         self.tf_buttons["5M"].setChecked(True)
+        layout.addLayout(tf_grid)
 
-        layout.addSpacing(4)
+        layout.addSpacing(2)
 
         # Стратегия Lua
         lbl_strat_title = QLabel("СТРАТЕГИЯ LUA")
@@ -327,7 +332,7 @@ class MainWindow(QMainWindow):
         )
         layout.addWidget(self.lbl_strat_name)
 
-        layout.addSpacing(4)
+        layout.addSpacing(2)
 
         # Управление
         lbl_ctrl_title = QLabel("УПРАВЛЕНИЕ")
@@ -349,7 +354,17 @@ class MainWindow(QMainWindow):
         self.btn_show_all.clicked.connect(self.show_all)
         layout.addWidget(self.btn_show_all)
 
-        layout.addStretch()
+        layout.addSpacing(2)
+
+        # Дерево слоев видимости
+        lbl_layers_title = QLabel("ВИДИМОСТЬ СЛОЁВ")
+        lbl_layers_title.setStyleSheet("font-size: 10px; font-weight: bold; color: #666666; border: none;")
+        layout.addWidget(lbl_layers_title)
+
+        self.tree_visibility = self._create_visibility_tree()
+        layout.addWidget(self.tree_visibility, stretch=1)
+
+        layout.addSpacing(2)
 
         # Перезаходы
         lbl_att_title = QLabel("ПЕРЕЗАХОДЫ")
@@ -365,6 +380,111 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.lbl_attempts)
 
         return panel
+
+    def _create_visibility_tree(self):
+        """Создает дерево слоев видимости с чекбоксами и ветками."""
+        tree = QTreeWidget()
+        tree.setObjectName("VisibilityTree")
+        tree.setHeaderHidden(True)
+        tree.setIndentation(13)
+
+        tree_data = [
+            {
+                "text": "Базовый график",
+                "children": [
+                    {"text": "Свечи (OHLC)", "key": "candles", "default": True},
+                    {"text": "Текущая цена", "key": "current_price", "default": True},
+                    {"text": "Перекрестие", "key": "crosshair", "default": True},
+                ]
+            },
+            {
+                "text": "Индикаторы",
+                "children": [
+                    {"text": "Фракталы Вильямса (▲/▼)", "key": "classic_fractals", "default": True},
+                ]
+            },
+            {
+                "text": "Фрактальные уровни",
+                "children": [
+                    {"text": "Линии уровней", "key": "fractal_levels", "default": True},
+                    {"text": "Метки цен", "key": "level_labels", "default": True},
+                    {"text": "Только активные в памяти", "key": "levels_active_only", "default": False},
+                ]
+            },
+            {
+                "text": "Торговые операции",
+                "children": [
+                    {
+                        "text": "Реальные сделки",
+                        "children": [
+                            {"text": "Стрелки входа (Buy/Sell)", "key": "real_trades", "default": True},
+                            {"text": "Номера перезаходов (#1..4)", "key": "real_attempts", "default": True},
+                            {"text": "Линия Stop Loss", "key": "real_sl", "default": True},
+                            {"text": "Линия Take Profit", "key": "real_tp", "default": True},
+                            {
+                                "text": "Фильтр результата",
+                                "children": [
+                                    {"text": "Прибыльные (Тейк)", "key": "filter_profitable", "default": True},
+                                    {"text": "Убыточные (Стоп)", "key": "filter_loss", "default": True},
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "text": "Виртуальные сделки",
+                        "children": [
+                            {"text": "Стрелки входа (Buy/Sell)", "key": "virt_trades", "default": True},
+                            {"text": "Номера попыток (#1..4)", "key": "virt_attempts", "default": True},
+                        ]
+                    }
+                ]
+            }
+        ]
+
+        def add_nodes(parent_node, items):
+            for entry in items:
+                item = QTreeWidgetItem(parent_node, [entry["text"]])
+                children = entry.get("children")
+                if children:
+                    item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsAutoTristate)
+                    add_nodes(item, children)
+                else:
+                    item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+                    item.setData(0, Qt.ItemDataRole.UserRole, entry.get("key"))
+                    is_checked = entry.get("default", True)
+                    item.setCheckState(0, Qt.CheckState.Checked if is_checked else Qt.CheckState.Unchecked)
+
+        add_nodes(tree, tree_data)
+        tree.expandAll()
+
+        tree.itemChanged.connect(self._on_tree_item_changed)
+        return tree
+
+    def _on_tree_item_changed(self, item, column):
+        """Срабатывает при изменении состояния чекбокса в дереве слоев."""
+        if getattr(self, "_updating_tree", False):
+            return
+        QTimer.singleShot(15, self._apply_tree_visibility)
+
+    def _apply_tree_visibility(self):
+        """Считывает состояния всех чекбоксов и передает в холст графика."""
+        if not hasattr(self, "tree_visibility"):
+            return
+
+        vis = {}
+
+        def scan(node):
+            key = node.data(0, Qt.ItemDataRole.UserRole)
+            if key:
+                vis[key] = (node.checkState(0) != Qt.CheckState.Unchecked)
+            for i in range(node.childCount()):
+                scan(node.child(i))
+
+        for i in range(self.tree_visibility.topLevelItemCount()):
+            scan(self.tree_visibility.topLevelItem(i))
+
+        self.chart_canvas.update_visibility(vis)
+        self.render_current_frame(auto_range=False)
 
     def _create_bottom_bar(self):
         """Нижняя информационная полоска под графиком."""

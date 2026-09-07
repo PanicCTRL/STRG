@@ -219,4 +219,25 @@ QPushButton#BtnShowAll:hover {
     background-color: #1e362e;
     color: #ffffff;
 }
+
+/* Дерево слоев видимости (QTreeWidget) */
+QTreeWidget#VisibilityTree {
+    background-color: #121212;
+    border: 1px solid #282828;
+    border-radius: 0px;
+    color: #cccccc;
+    font-size: 10.5px;
+    padding: 2px;
+}
+QTreeWidget#VisibilityTree::item {
+    padding: 2px 1px;
+    border: none;
+}
+QTreeWidget#VisibilityTree::item:hover {
+    background-color: #1e1e1e;
+}
+QTreeWidget#VisibilityTree::item:selected {
+    background-color: #162836;
+    color: #ffffff;
+}
 """
