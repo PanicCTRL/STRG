@@ -1,4 +1,4 @@
-﻿"""
+"""
 lua_runner.py
 Модуль исполнения произвольных Lua-стратегий в STRG.
 Использует lupa (Lua 5.5) для исполнения чистого Lua-кода (CP1251)
@@ -142,10 +142,15 @@ class LuaStrategyRunner:
         return self.trade_signals, self.fractal_levels, self.stats
 
     def _parse_trades(self, raw_events):
-        """Сопоставляет события открытия и закрытия сделок."""
+        """Сопоставляет события открытия и закрытия сделок с точными уровнями SL/TP."""
         trades = []
         open_real_trade = None
         open_virt_trade = None
+
+        g = self.lua.globals()
+        operation = str(g.operation or "B")
+        sl_offset = float(g.slOffset or 75)
+        tp_offset = float(g.tpOffset or 750)
 
         for ev in raw_events:
             ev_type = ev.get("type")
@@ -154,13 +159,22 @@ class LuaStrategyRunner:
 
             if ev_type == "TRADE_OPEN":
                 attempt_num = 4 - int(ev.get("t_left", 0))
+                entry_p = float(ev.get("start", p))
+
+                if operation == "B":
+                    sl_val = entry_p - sl_offset
+                    tp_val = entry_p + tp_offset
+                else:
+                    sl_val = entry_p + sl_offset
+                    tp_val = entry_p - tp_offset
+
                 open_real_trade = {
                     "is_real": True,
-                    "direction": "BUY",
+                    "direction": "BUY" if operation == "B" else "SELL",
                     "entry_time": t,
-                    "entry_price": float(ev.get("start", p)),
-                    "sl": float(self.lua.globals().stop_price),
-                    "tp": float(self.lua.globals().take_price),
+                    "entry_price": entry_p,
+                    "sl": sl_val,
+                    "tp": tp_val,
                     "attempt": attempt_num,
                     "close_time": None,
                     "close_price": None,
@@ -177,13 +191,24 @@ class LuaStrategyRunner:
 
             elif ev_type == "VIRT_OPEN":
                 attempt_num = 4 - int(ev.get("v_left", 0))
+                entry_p = float(ev.get("start", p))
+
+                if operation == "B":
+                    virt_dir = "SELL"
+                    v_sl = entry_p + sl_offset
+                    v_tp = entry_p - tp_offset
+                else:
+                    virt_dir = "BUY"
+                    v_sl = entry_p - sl_offset
+                    v_tp = entry_p + tp_offset
+
                 open_virt_trade = {
                     "is_real": False,
-                    "direction": "SELL",
+                    "direction": virt_dir,
                     "entry_time": t,
-                    "entry_price": float(ev.get("start", p)),
-                    "sl": float(self.lua.globals().virt_stop),
-                    "tp": float(self.lua.globals().virt_take),
+                    "entry_price": entry_p,
+                    "sl": v_sl,
+                    "tp": v_tp,
                     "attempt": attempt_num,
                     "close_time": None,
                     "close_price": None,

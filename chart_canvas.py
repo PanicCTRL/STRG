@@ -376,15 +376,16 @@ class ChartCanvas(pg.PlotWidget):
                     eff_close = curr_time
 
                 idx_close = int(np.searchsorted(c_times, eff_close, side="right")) - 1
-                idx_close = max(idx + 1, min(idx_close, n_bars - 1))
+                idx_close = max(idx, min(idx_close, n_bars - 1))
+                x_end = max(idx + 0.6, float(idx_close))
 
                 # Линия Stop Loss
-                line_sl = pg.PlotCurveItem(x=[idx, idx_close], y=[sl_price, sl_price], pen=pen_sl)
+                line_sl = pg.PlotCurveItem(x=[idx, x_end], y=[sl_price, sl_price], pen=pen_sl)
                 pi.addItem(line_sl)
                 self._chart_items.append(line_sl)
 
                 # Линия Take Profit
-                line_tp = pg.PlotCurveItem(x=[idx, idx_close], y=[tp_price, tp_price], pen=pen_tp)
+                line_tp = pg.PlotCurveItem(x=[idx, x_end], y=[tp_price, tp_price], pen=pen_tp)
                 pi.addItem(line_tp)
                 self._chart_items.append(line_tp)
 
