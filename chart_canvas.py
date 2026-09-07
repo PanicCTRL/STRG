@@ -50,8 +50,12 @@ class ChartCanvas(pg.PlotWidget):
         super().__init__(axisItems={"bottom": self.time_axis, "right": self.price_axis})
 
         self._chart_items = []
+        self.df_candles = None
         self.current_price_line = None
         self.price_label = None
+        self.v_line = None
+        self.h_line = None
+        self.crosshair_label = None
 
         self._setup_style()
 
@@ -84,6 +88,92 @@ class ChartCanvas(pg.PlotWidget):
         )
         pi.addItem(self.price_label)
 
+        # Интерактивное перекрестие (Crosshair)
+        pen_cross = pg.mkPen(color="#777777", width=1, style=Qt.PenStyle.DashLine)
+        pen_cross.setCosmetic(True)
+
+        self.v_line = pg.InfiniteLine(angle=90, movable=False, pen=pen_cross)
+        self.h_line = pg.InfiniteLine(angle=0, movable=False, pen=pen_cross)
+        self.v_line.setVisible(False)
+        self.h_line.setVisible(False)
+        pi.addItem(self.v_line, ignoreBounds=True)
+        pi.addItem(self.h_line, ignoreBounds=True)
+
+        # Плашка под курсором (HUD Tooltip)
+        self.crosshair_label = pg.TextItem(
+            text="", anchor=(-0.05, 1.05), color="#e0e0e0",
+            fill=pg.mkBrush(QColor(18, 18, 18, 230)),
+            border=pg.mkPen("#444444", width=1)
+        )
+        self.crosshair_label.setFont(QFont("Consolas", 8))
+        self.crosshair_label.setVisible(False)
+        pi.addItem(self.crosshair_label, ignoreBounds=True)
+
+        self.scene().sigMouseMoved.connect(self._on_mouse_moved)
+
+    def leaveEvent(self, event):
+        super().leaveEvent(event)
+        if self.v_line:
+            self.v_line.setVisible(False)
+        if self.h_line:
+            self.h_line.setVisible(False)
+        if self.crosshair_label:
+            self.crosshair_label.setVisible(False)
+
+    def _on_mouse_moved(self, pos):
+        pi = self.getPlotItem()
+        vb = pi.vb
+        if not vb.sceneBoundingRect().contains(pos):
+            self.v_line.setVisible(False)
+            self.h_line.setVisible(False)
+            self.crosshair_label.setVisible(False)
+            return
+
+        mouse_pt = vb.mapSceneToView(pos)
+        x_val = mouse_pt.x()
+        y_val = mouse_pt.y()
+
+        self.v_line.setPos(x_val)
+        self.h_line.setPos(y_val)
+        self.v_line.setVisible(True)
+        self.h_line.setVisible(True)
+
+        if self.df_candles is not None and not self.df_candles.empty:
+            idx = int(round(x_val))
+            if 0 <= idx < len(self.df_candles):
+                row = self.df_candles.iloc[idx]
+                t_str = row["time"].strftime("%H:%M")
+                p_cur = f"{int(round(y_val)):,}".replace(",", " ")
+                o = f"{int(row['open']):,}".replace(",", " ")
+                h = f"{int(row['high']):,}".replace(",", " ")
+                l = f"{int(row['low']):,}".replace(",", " ")
+                c = f"{int(row['close']):,}".replace(",", " ")
+                vol = f"{int(row['volume']):,}".replace(",", " ")
+
+                text = (
+                    f" {t_str} | Курсор: {p_cur}\n"
+                    f" O: {o}   H: {h}\n"
+                    f" L: {l}   C: {c}\n"
+                    f" Объём: {vol} "
+                )
+                self.crosshair_label.setText(text)
+
+                view_range = vb.viewRange()
+                x_range = view_range[0]
+                y_range = view_range[1]
+
+                # Автоматически смещаем плашку, чтобы не вылезала за края графика
+                anchor_x = 1.05 if (x_val - x_range[0]) > 0.7 * (x_range[1] - x_range[0]) else -0.05
+                anchor_y = 1.05 if (y_val - y_range[0]) < 0.3 * (y_range[1] - y_range[0]) else -0.05
+
+                self.crosshair_label.setAnchor((anchor_x, anchor_y))
+                self.crosshair_label.setPos(x_val, y_val)
+                self.crosshair_label.setVisible(True)
+            else:
+                self.crosshair_label.setVisible(False)
+        else:
+            self.crosshair_label.setVisible(False)
+
     def _clear_chart_items(self):
         """Удаляет все динамические элементы (свечи, уровни, сделки)."""
         pi = self.getPlotItem()
@@ -100,6 +190,7 @@ class ChartCanvas(pg.PlotWidget):
     def render_candles(self, df_candles, auto_range=False):
         """Отрисовывает свечи на графике."""
         self._clear_chart_items()
+        self.df_candles = df_candles
         pi = self.getPlotItem()
 
         if df_candles.empty:
