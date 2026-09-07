@@ -12,6 +12,7 @@ import pyqtgraph as pg
 from PyQt6.QtGui import QColor, QFont
 from PyQt6.QtCore import Qt
 import numpy as np
+import theme
 
 
 class CustomTimeAxis(pg.AxisItem):
@@ -177,6 +178,58 @@ class ChartCanvas(pg.PlotWidget):
             pi.setXRange(-3, n + 8, padding=0.01)
             margin = price_range * 0.05
             pi.setYRange(lows.min() - margin, highs.max() + margin, padding=0.01)
+
+    def render_classic_fractals(self, df_candles):
+        """
+        Отрисовывает классические 5-свечные фракталы Билла Вильямса:
+        - Зелёный треугольник ▲ (FRACTAL_UP) над максимумом подтверждённой свечи
+        - Красный треугольник ▼ (FRACTAL_DOWN) под минимумом подтверждённой свечи
+        """
+        if df_candles is None or len(df_candles) < 5:
+            return
+
+        pi = self.getPlotItem()
+
+        # Фрактал считается подтверждённым, если справа от него закрылись как минимум 2 свечи
+        confirmed = df_candles.iloc[:-2]
+        up_mask = confirmed["fractal_up"].notna()
+        down_mask = confirmed["fractal_down"].notna()
+
+        if not up_mask.any() and not down_mask.any():
+            return
+
+        highs = df_candles["high"].values
+        lows = df_candles["low"].values
+        price_range = max(100.0, float(highs.max() - lows.min()))
+        offset = price_range * 0.012
+
+        # 1. Верхние фракталы ▲
+        if up_mask.any():
+            up_bars = confirmed[up_mask]
+            up_x = up_bars["bar_idx"].values.astype(float)
+            up_y = up_bars["high"].values.astype(float) + offset
+
+            sp_up = pg.ScatterPlotItem(
+                x=up_x, y=up_y, symbol="t1", size=9,
+                pen=pg.mkPen(color="#134e3f", width=1),
+                brush=pg.mkBrush(theme.FRACTAL_UP)
+            )
+            pi.addItem(sp_up)
+            self._chart_items.append(sp_up)
+
+        # 2. Нижние фракталы ▼
+        if down_mask.any():
+            dn_bars = confirmed[down_mask]
+            dn_x = dn_bars["bar_idx"].values.astype(float)
+            dn_y = dn_bars["low"].values.astype(float) - offset
+
+            sp_dn = pg.ScatterPlotItem(
+                x=dn_x, y=dn_y, symbol="t", size=9,
+                pen=pg.mkPen(color="#5c1a1a", width=1),
+                brush=pg.mkBrush(theme.FRACTAL_DOWN)
+            )
+            pi.addItem(sp_dn)
+            self._chart_items.append(sp_dn)
 
     def render_fractal_levels(self, levels, df_candles):
         """

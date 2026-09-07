@@ -377,7 +377,7 @@ class MainWindow(QMainWindow):
 
         layout.addStretch()
 
-        lbl_legend = QLabel("🟢 Real Buy   🔴 Real Sell   🟡 Virt Buy   🟣 Virt Sell   --- SL/TP/Fractal")
+        lbl_legend = QLabel("🟢 Real Buy   🔴 Real Sell   🟡 Virt Buy   🟣 Virt Sell   ▲/▼ Фракталы   --- SL/TP/Уровни")
         lbl_legend.setStyleSheet("color: #666666; font-size: 10px;")
         layout.addWidget(lbl_legend)
 
@@ -449,6 +449,7 @@ class MainWindow(QMainWindow):
 
         # Отрисовка
         self.chart_canvas.render_candles(visible_candles, auto_range=auto_range)
+        self.chart_canvas.render_classic_fractals(visible_candles)
         self.chart_canvas.render_fractal_levels(self.last_levels, visible_candles)
         self.chart_canvas.render_trades(self.last_trades, visible_candles)
 
