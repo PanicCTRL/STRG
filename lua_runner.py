@@ -220,7 +220,12 @@ class LuaStrategyRunner:
                 if open_virt_trade and open_virt_trade["close_time"] is None:
                     open_virt_trade["close_time"] = t
                     open_virt_trade["close_price"] = p
-                    open_virt_trade["close_reason"] = "VIRT_CLOSE"
+                    if open_virt_trade["direction"] == "BUY":
+                        is_tp = p >= open_virt_trade["tp"] or p > open_virt_trade["entry_price"]
+                    else:
+                        is_tp = p <= open_virt_trade["tp"] or p < open_virt_trade["entry_price"]
+                    open_virt_trade["close_reason"] = "TP" if is_tp else "SL"
+                    open_virt_trade["is_profit"] = is_tp
                     open_virt_trade = None
 
         return trades

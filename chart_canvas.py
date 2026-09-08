@@ -73,6 +73,10 @@ class ChartCanvas(pg.PlotWidget):
             "filter_loss": True,
             "virt_trades": True,
             "virt_attempts": True,
+            "virt_sl": True,
+            "virt_tp": True,
+            "virt_filter_profitable": True,
+            "virt_filter_loss": True,
         }
 
         self._setup_style()
@@ -471,7 +475,15 @@ class ChartCanvas(pg.PlotWidget):
                 if close_reason == "SL" and not self.visibility.get("filter_loss", True):
                     continue
             else:
-                if not self.visibility.get("virt_trades", True) and not self.visibility.get("virt_attempts", True):
+                close_reason = tr.get("close_reason")
+                if close_reason == "TP" and not self.visibility.get("virt_filter_profitable", True):
+                    continue
+                if close_reason == "SL" and not self.visibility.get("virt_filter_loss", True):
+                    continue
+                if (not self.visibility.get("virt_trades", True)
+                        and not self.visibility.get("virt_attempts", True)
+                        and not self.visibility.get("virt_sl", True)
+                        and not self.visibility.get("virt_tp", True)):
                     continue
 
             # Отрисовка стрелки и номера перезахода
@@ -521,8 +533,8 @@ class ChartCanvas(pg.PlotWidget):
                     pi.addItem(lbl)
                     self._chart_items.append(lbl)
 
-            # Отрисовка линий SL и TP для реальных сделок
-            if is_real and tr.get("sl") and tr.get("tp"):
+            # Отрисовка линий SL и TP (для реальных и виртуальных сделок)
+            if tr.get("sl") and tr.get("tp"):
                 sl_price = tr["sl"]
                 tp_price = tr["tp"]
                 
@@ -537,14 +549,17 @@ class ChartCanvas(pg.PlotWidget):
                 idx_close = max(idx, min(idx_close, n_bars - 1))
                 x_end = max(idx + 0.6, float(idx_close))
 
+                show_sl = self.visibility.get("real_sl", True) if is_real else self.visibility.get("virt_sl", True)
+                show_tp = self.visibility.get("real_tp", True) if is_real else self.visibility.get("virt_tp", True)
+
                 # Линия Stop Loss
-                if self.visibility.get("real_sl", True):
+                if show_sl:
                     line_sl = pg.PlotCurveItem(x=[idx, x_end], y=[sl_price, sl_price], pen=pen_sl)
                     pi.addItem(line_sl)
                     self._chart_items.append(line_sl)
 
                 # Линия Take Profit
-                if self.visibility.get("real_tp", True):
+                if show_tp:
                     line_tp = pg.PlotCurveItem(x=[idx, x_end], y=[tp_price, tp_price], pen=pen_tp)
                     pi.addItem(line_tp)
                     self._chart_items.append(line_tp)

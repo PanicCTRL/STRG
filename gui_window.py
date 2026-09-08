@@ -435,6 +435,15 @@ class MainWindow(QMainWindow):
                         "children": [
                             {"text": "Стрелки входа (Buy/Sell)", "key": "virt_trades", "default": True},
                             {"text": "Номера попыток (#1..4)", "key": "virt_attempts", "default": True},
+                            {"text": "Линия Stop Loss", "key": "virt_sl", "default": True},
+                            {"text": "Линия Take Profit", "key": "virt_tp", "default": True},
+                            {
+                                "text": "Фильтр результата",
+                                "children": [
+                                    {"text": "Прибыльные (Тейк)", "key": "virt_filter_profitable", "default": True},
+                                    {"text": "Убыточные (Стоп)", "key": "virt_filter_loss", "default": True},
+                                ]
+                            }
                         ]
                     }
                 ]
