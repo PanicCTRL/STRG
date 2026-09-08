@@ -250,7 +250,7 @@ class ChartCanvas(pg.PlotWidget):
             pi.addItem(wick_item)
             self._chart_items.append(wick_item)
 
-            # 2. ТЕЛА СВЕЧЕЙ (BarGraphItem)
+            # 2. ТЕЛА СВЕЧЕЙ (BarGraphItem через y0 и y1 для точной привязки к Open и Close)
             bar_width = 0.55
 
             # Растущие свечи
@@ -258,13 +258,12 @@ class ChartCanvas(pg.PlotWidget):
                 up_idx = idx[up_mask]
                 up_open = opens[up_mask]
                 up_close = closes[up_mask]
-                up_heights = up_close - up_open
-                up_heights[up_heights < 0.5] = 0.5
+                up_close_eff = np.maximum(up_close, up_open + 0.5)
 
                 up_pen = pg.mkPen(color="#cccccc", width=1)
                 up_pen.setCosmetic(True)
                 up_bars = pg.BarGraphItem(
-                    x=up_idx, y=up_open, height=up_heights, width=bar_width,
+                    x=up_idx, y0=up_open, y1=up_close_eff, width=bar_width,
                     pen=up_pen, brush=pg.mkBrush("#cccccc")
                 )
                 pi.addItem(up_bars)
@@ -275,14 +274,13 @@ class ChartCanvas(pg.PlotWidget):
                 dn_idx = idx[down_mask]
                 dn_open = opens[down_mask]
                 dn_close = closes[down_mask]
-                dn_heights = dn_open - dn_close
-                dn_heights[dn_heights < 0.5] = 0.5
+                dn_open_eff = np.maximum(dn_open, dn_close + 0.5)
 
                 dn_pen = pg.mkPen(color="#555555", width=1)
                 dn_pen.setCosmetic(True)
                 dn_bars = pg.BarGraphItem(
-                    x=dn_idx, y=dn_close, height=dn_heights, width=bar_width,
-                    pen=dn_pen, brush=pg.mkBrush("#444444")
+                    x=dn_idx, y0=dn_close, y1=dn_open_eff, width=bar_width,
+                    pen=dn_pen, brush=pg.mkBrush("#333333")
                 )
                 pi.addItem(dn_bars)
                 self._chart_items.append(dn_bars)
