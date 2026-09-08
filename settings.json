@@ -1,0 +1,33 @@
+{
+  "visibility": {
+    "candles": true,
+    "current_price": true,
+    "crosshair": true,
+    "classic_fractals": true,
+    "fractal_levels": true,
+    "level_labels": true,
+    "levels_active_only": false,
+    "real_trades": true,
+    "real_attempts": true,
+    "real_sl": true,
+    "real_tp": true,
+    "filter_profitable": true,
+    "filter_loss": true,
+    "virt_trades": true,
+    "virt_attempts": true,
+    "virt_sl": true,
+    "virt_tp": true,
+    "virt_filter_profitable": true,
+    "virt_filter_loss": true
+  },
+  "tree_expanded": {
+    "Базовый график": true,
+    "Индикаторы": true,
+    "Фрактальные уровни": true,
+    "Торговые операции": true,
+    "Торговые операции/Реальные сделки": true,
+    "Торговые операции/Реальные сделки/Фильтр результата": true,
+    "Торговые операции/Виртуальные сделки": true,
+    "Торговые операции/Виртуальные сделки/Фильтр результата": true
+  }
+}

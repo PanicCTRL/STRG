@@ -13,6 +13,7 @@ gui_window.py
 """
 
 import os
+import json
 import numpy as np
 import pandas as pd
 from PyQt6.QtWidgets import (
@@ -25,6 +26,8 @@ import theme
 from chart_canvas import ChartCanvas
 from tick_aggregator import TickAggregator
 from lua_runner import LuaStrategyRunner
+
+SETTINGS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "settings.json")
 
 
 class MainWindow(QMainWindow):
@@ -90,6 +93,9 @@ class MainWindow(QMainWindow):
         # 2. Правая панель управления (155px)
         self.right_panel = self._create_right_panel()
         root_layout.addWidget(self.right_panel)
+
+        # Применяем настройки видимости к холсту
+        self._apply_tree_visibility()
 
         # Первичная загрузка
         self.load_and_render(reload_lua=True, auto_range=True)
@@ -381,12 +387,66 @@ class MainWindow(QMainWindow):
 
         return panel
 
+    def load_settings(self):
+        """Загружает сохраненные настройки видимости и веток дерева из settings.json."""
+        if not os.path.exists(SETTINGS_FILE):
+            return {}
+        try:
+            with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"[WARN] Ошибка загрузки settings.json: {e}")
+            return {}
+
+    def save_settings(self):
+        """Сохраняет настройки видимости и раскрытия веток дерева в settings.json."""
+        if not hasattr(self, "tree_visibility"):
+            return
+
+        vis = {}
+        expanded = {}
+
+        def scan_checks(node):
+            key = node.data(0, Qt.ItemDataRole.UserRole)
+            if key:
+                vis[key] = (node.checkState(0) != Qt.CheckState.Unchecked)
+            for i in range(node.childCount()):
+                scan_checks(node.child(i))
+
+        def scan_expanded(node, path=""):
+            node_text = node.text(0)
+            current_path = f"{path}/{node_text}" if path else node_text
+            if node.childCount() > 0:
+                expanded[current_path] = node.isExpanded()
+                for i in range(node.childCount()):
+                    scan_expanded(node.child(i), current_path)
+
+        for i in range(self.tree_visibility.topLevelItemCount()):
+            top_item = self.tree_visibility.topLevelItem(i)
+            scan_checks(top_item)
+            scan_expanded(top_item)
+
+        data = {
+            "visibility": vis,
+            "tree_expanded": expanded,
+        }
+
+        try:
+            with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            print(f"[WARN] Ошибка сохранения settings.json: {e}")
+
     def _create_visibility_tree(self):
         """Создает дерево слоев видимости с чекбоксами и ветками."""
         tree = QTreeWidget()
         tree.setObjectName("VisibilityTree")
         tree.setHeaderHidden(True)
         tree.setIndentation(13)
+
+        saved_settings = self.load_settings()
+        saved_vis = saved_settings.get("visibility", {})
+        saved_expanded = saved_settings.get("tree_expanded", {})
 
         tree_data = [
             {
@@ -450,24 +510,38 @@ class MainWindow(QMainWindow):
             }
         ]
 
-        def add_nodes(parent_node, items):
+        def add_nodes(parent_node, items, path=""):
             for entry in items:
-                item = QTreeWidgetItem(parent_node, [entry["text"]])
+                node_text = entry["text"]
+                item = QTreeWidgetItem(parent_node, [node_text])
+                current_path = f"{path}/{node_text}" if path else node_text
                 children = entry.get("children")
                 if children:
                     item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsAutoTristate)
-                    add_nodes(item, children)
+                    add_nodes(item, children, current_path)
+                    if current_path in saved_expanded:
+                        item.setExpanded(bool(saved_expanded[current_path]))
+                    else:
+                        item.setExpanded(True)
                 else:
                     item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
-                    item.setData(0, Qt.ItemDataRole.UserRole, entry.get("key"))
-                    is_checked = entry.get("default", True)
+                    key = entry.get("key")
+                    item.setData(0, Qt.ItemDataRole.UserRole, key)
+                    is_checked = saved_vis.get(key, entry.get("default", True))
                     item.setCheckState(0, Qt.CheckState.Checked if is_checked else Qt.CheckState.Unchecked)
 
         add_nodes(tree, tree_data)
-        tree.expandAll()
+        if not saved_expanded:
+            tree.expandAll()
 
         tree.itemChanged.connect(self._on_tree_item_changed)
+        tree.itemExpanded.connect(self._on_tree_expansion_changed)
+        tree.itemCollapsed.connect(self._on_tree_expansion_changed)
         return tree
+
+    def _on_tree_expansion_changed(self, item):
+        """Срабатывает при раскрытии или сворачивании ветки дерева."""
+        self.save_settings()
 
     def _on_tree_item_changed(self, item, column):
         """Срабатывает при изменении состояния чекбокса в дереве слоев."""
@@ -494,6 +568,7 @@ class MainWindow(QMainWindow):
 
         self.chart_canvas.update_visibility(vis)
         self.render_current_frame(auto_range=False)
+        self.save_settings()
 
     def _create_bottom_bar(self):
         """Нижняя информационная полоска под графиком."""
@@ -818,3 +893,8 @@ class MainWindow(QMainWindow):
     def on_refresh_clicked(self):
         self.load_and_render(reload_lua=True, auto_range=False)
         self.lbl_status.setText("Статус: Lua-скрипт перезагружен, график обновлен!")
+
+    def closeEvent(self, event):
+        """Сохраняет настройки перед закрытием приложения."""
+        self.save_settings()
+        super().closeEvent(event)
