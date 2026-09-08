@@ -478,6 +478,7 @@ class MainWindow(QMainWindow):
                         "text": "Реальные сделки",
                         "children": [
                             {"text": "Стрелки входа (Buy/Sell)", "key": "real_trades", "default": True},
+                            {"text": "Стрелки Брекета (Векторы)", "key": "real_vectors", "default": True},
                             {"text": "Номера перезаходов (#1..4)", "key": "real_attempts", "default": True},
                             {"text": "Линия Stop Loss", "key": "real_sl", "default": True},
                             {"text": "Линия Take Profit", "key": "real_tp", "default": True},
@@ -494,6 +495,7 @@ class MainWindow(QMainWindow):
                         "text": "Виртуальные сделки",
                         "children": [
                             {"text": "Стрелки входа (Buy/Sell)", "key": "virt_trades", "default": True},
+                            {"text": "Стрелки Брекета (Векторы)", "key": "virt_vectors", "default": True},
                             {"text": "Номера попыток (#1..4)", "key": "virt_attempts", "default": True},
                             {"text": "Линия Stop Loss", "key": "virt_sl", "default": True},
                             {"text": "Линия Take Profit", "key": "virt_tp", "default": True},

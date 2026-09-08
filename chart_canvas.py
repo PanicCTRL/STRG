@@ -8,11 +8,76 @@ chart_canvas.py
 - Защитные уровни SL (красный пунктир) и TP (зеленый пунктир)
 """
 
+import math
 import pyqtgraph as pg
-from PyQt6.QtGui import QColor, QFont
-from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QColor, QFont, QPainter, QPolygonF, QPen, QBrush
+from PyQt6.QtCore import Qt, QPointF, QRectF
 import numpy as np
 import theme
+
+
+class TradeVectorItem(pg.GraphicsObject):
+    """
+    Векторная стрелка сделки от точки входа к уровню TP или SL:
+    - Линия со сплошным треугольным наконечником на конце.
+    - Наконечник косметический (фиксированный размер в пикселях, не искажается при масштабировании графика).
+    """
+    def __init__(self, x1, y1, x2, y2, color, width=2.0, head_size=10):
+        super().__init__()
+        self.x1 = float(x1)
+        self.y1 = float(y1)
+        self.x2 = float(x2)
+        self.y2 = float(y2)
+        self.color = QColor(color)
+        self.pen = QPen(self.color, width)
+        self.pen.setCosmetic(True)
+        self.brush = QBrush(self.color)
+        self.head_size = head_size
+
+    def boundingRect(self):
+        xmin = min(self.x1, self.x2)
+        xmax = max(self.x1, self.x2)
+        ymin = min(self.y1, self.y2)
+        ymax = max(self.y1, self.y2)
+        return QRectF(xmin - 0.5, ymin - 10, max(1.0, xmax - xmin + 1.0), max(20.0, ymax - ymin + 20.0))
+
+    def paint(self, p, opt, widget):
+        vb = self.getViewBox()
+        if vb is None:
+            return
+
+        p1_dev = vb.mapViewToDevice(QPointF(self.x1, self.y1))
+        p2_dev = vb.mapViewToDevice(QPointF(self.x2, self.y2))
+
+        dx = p2_dev.x() - p1_dev.x()
+        dy = p2_dev.y() - p1_dev.y()
+        length = math.hypot(dx, dy)
+        if length < 3:
+            return
+
+        p.save()
+        p.resetTransform()
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+
+        hs = self.head_size
+        hw = hs * 0.42
+        ux = dx / length
+        uy = dy / length
+
+        tip = p2_dev
+        nx = -uy
+        ny = ux
+        base_left = QPointF(tip.x() - hs * ux + hw * nx, tip.y() - hs * uy + hw * ny)
+        base_right = QPointF(tip.x() - hs * ux - hw * nx, tip.y() - hs * uy - hw * ny)
+        arrow_base = QPointF(tip.x() - (hs - 1) * ux, tip.y() - (hs - 1) * uy)
+
+        p.setPen(self.pen)
+        p.drawLine(p1_dev, arrow_base)
+
+        p.setBrush(self.brush)
+        p.drawPolygon(QPolygonF([tip, base_left, base_right]))
+
+        p.restore()
 
 
 class CustomTimeAxis(pg.AxisItem):
@@ -66,12 +131,14 @@ class ChartCanvas(pg.PlotWidget):
             "level_labels": True,
             "levels_active_only": False,
             "real_trades": True,
+            "real_vectors": True,
             "real_attempts": True,
             "real_sl": True,
             "real_tp": True,
             "filter_profitable": True,
             "filter_loss": True,
             "virt_trades": True,
+            "virt_vectors": True,
             "virt_attempts": True,
             "virt_sl": True,
             "virt_tp": True,
@@ -563,6 +630,57 @@ class ChartCanvas(pg.PlotWidget):
                     line_tp = pg.PlotCurveItem(x=[idx, x_end], y=[tp_price, tp_price], pen=pen_tp)
                     pi.addItem(line_tp)
                     self._chart_items.append(line_tp)
+
+                # Векторные стрелки Брекета (к TP и к SL)
+                show_vectors = self.visibility.get("real_vectors", True) if is_real else self.visibility.get("virt_vectors", True)
+                if show_vectors:
+                    x_vec_end = max(float(idx) + 0.45, float(idx_close))
+                    close_reason = tr.get("close_reason")
+                    is_closed_now = tr.get("close_time") is not None and np.datetime64(tr["close_time"]) <= curr_time
+
+                    if is_real:
+                        if not is_closed_now:
+                            tp_col = "#2ecc71"
+                            sl_col = "#e74c3c"
+                            tp_w, sl_w = 1.5, 1.5
+                            tp_hs, sl_hs = 9, 9
+                        elif close_reason == "TP":
+                            tp_col = "#2ecc71"
+                            sl_col = "#5a2020"
+                            tp_w, sl_w = 2.0, 1.2
+                            tp_hs, sl_hs = 11, 8
+                        else:
+                            tp_col = "#7f8d7b"
+                            sl_col = "#e74c3c"
+                            tp_w, sl_w = 1.2, 2.0
+                            tp_hs, sl_hs = 8, 11
+                    else:
+                        base_virt_col = "#f1c40f" if direction == "BUY" else "#9b59b6"
+                        dim_virt_col = "#8c8452" if direction == "BUY" else "#6d5b75"
+
+                        if not is_closed_now:
+                            tp_col = base_virt_col
+                            sl_col = "#e74c3c"
+                            tp_w, sl_w = 1.5, 1.5
+                            tp_hs, sl_hs = 9, 9
+                        elif close_reason == "TP":
+                            tp_col = base_virt_col
+                            sl_col = "#5a2020"
+                            tp_w, sl_w = 2.0, 1.2
+                            tp_hs, sl_hs = 11, 8
+                        else:
+                            tp_col = dim_virt_col
+                            sl_col = "#e74c3c"
+                            tp_w, sl_w = 1.2, 2.0
+                            tp_hs, sl_hs = 8, 11
+
+                    vec_tp = TradeVectorItem(idx, p, x_vec_end, tp_price, tp_col, width=tp_w, head_size=tp_hs)
+                    pi.addItem(vec_tp)
+                    self._chart_items.append(vec_tp)
+
+                    vec_sl = TradeVectorItem(idx, p, x_vec_end, sl_price, sl_col, width=sl_w, head_size=sl_hs)
+                    pi.addItem(vec_sl)
+                    self._chart_items.append(vec_sl)
 
         # Стрелки сделок
         if rb_x:
