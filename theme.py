@@ -4,6 +4,10 @@ theme.py
 Прямоугольные кнопки (0px), тонкие рамки 1px, системные шрифты Tahoma (11px).
 """
 
+import os
+
+ICONS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "icons").replace("\\", "/")
+
 # ============================================================
 # 1. ЦВЕТОВАЯ ПАЛИТРА ГРАФИКА
 # ============================================================
@@ -240,4 +244,31 @@ QTreeWidget#VisibilityTree::item:selected {
     background-color: #162836;
     color: #ffffff;
 }
-"""
+
+/* Стрелки раскрывающихся веток дерева (серые в неактивном состоянии, голубые при наведении) */
+QTreeWidget#VisibilityTree::branch:has-children:!has-siblings:closed,
+QTreeWidget#VisibilityTree::branch:closed:has-children:has-siblings {
+    border-image: none;
+    image: url("__ICONS_DIR__/branch_closed.svg");
+}
+QTreeWidget#VisibilityTree::branch:has-children:!has-siblings:closed:hover,
+QTreeWidget#VisibilityTree::branch:closed:has-children:has-siblings:hover,
+QTreeWidget#VisibilityTree::branch:has-children:!has-siblings:closed:pressed,
+QTreeWidget#VisibilityTree::branch:closed:has-children:has-siblings:pressed {
+    border-image: none;
+    image: url("__ICONS_DIR__/branch_closed_hover.svg");
+}
+QTreeWidget#VisibilityTree::branch:open:has-children:!has-siblings,
+QTreeWidget#VisibilityTree::branch:open:has-children:has-siblings {
+    border-image: none;
+    image: url("__ICONS_DIR__/branch_open.svg");
+}
+QTreeWidget#VisibilityTree::branch:open:has-children:!has-siblings:hover,
+QTreeWidget#VisibilityTree::branch:open:has-children:has-siblings:hover,
+QTreeWidget#VisibilityTree::branch:open:has-children:!has-siblings:pressed,
+QTreeWidget#VisibilityTree::branch:open:has-children:has-siblings:pressed {
+    border-image: none;
+    image: url("__ICONS_DIR__/branch_open_hover.svg");
+}
+""".replace("__ICONS_DIR__", ICONS_DIR)
+
