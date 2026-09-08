@@ -559,13 +559,24 @@ class MainWindow(QMainWindow):
 
         visible_candles = self.df_candles_full.iloc[:c_idx].copy()
 
-        # Моделируем "живое дыхание" последней свечи (Candle Morphing)
+        # Моделируем честное "живое дыхание" формирующейся свечи:
+        # High и Low берутся строго по уже случившимся тикам внутри текущего бара (без заглядывания в будущее!)
         last_row_idx = visible_candles.index[-1]
-        visible_candles.loc[last_row_idx, "close"] = curr_price
-        if curr_price > visible_candles.loc[last_row_idx, "high"]:
-            visible_candles.loc[last_row_idx, "high"] = curr_price
-        if curr_price < visible_candles.loc[last_row_idx, "low"]:
-            visible_candles.loc[last_row_idx, "low"] = curr_price
+        bar_start_time = visible_candles.loc[last_row_idx, "time"]
+
+        tick_times = df_ticks["DATETIME"].values
+        start_tick_idx = int(np.searchsorted(tick_times, np.datetime64(bar_start_time), side="left"))
+        start_tick_idx = min(start_tick_idx, idx)
+
+        bar_prices = df_ticks["PRICE"].values[start_tick_idx : idx + 1]
+        if len(bar_prices) > 0:
+            visible_candles.loc[last_row_idx, "open"] = float(bar_prices[0])
+            visible_candles.loc[last_row_idx, "high"] = float(bar_prices.max())
+            visible_candles.loc[last_row_idx, "low"] = float(bar_prices.min())
+            visible_candles.loc[last_row_idx, "close"] = curr_price
+            if "volume" in visible_candles.columns:
+                bar_vols = df_ticks["VOL"].values[start_tick_idx : idx + 1]
+                visible_candles.loc[last_row_idx, "volume"] = int(bar_vols.sum())
 
         # Отрисовка
         self.chart_canvas.render_candles(visible_candles, auto_range=auto_range)
