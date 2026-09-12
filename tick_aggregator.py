@@ -1,4 +1,4 @@
-﻿"""
+"""
 tick_aggregator.py
 Быстрый парсер тиков и сборщик японских свечей (OHLCV) + расчёт фракталов.
 """
@@ -35,7 +35,7 @@ class TickAggregator:
         dt_str = df["DATE"] + time_str
         df["DATETIME"] = pd.to_datetime(dt_str, format="%Y%m%d%H%M%S")
 
-        df = df.sort_values("DATETIME").reset_index(drop=True)
+        df = df.sort_values("DATETIME", kind="stable").reset_index(drop=True)
         self.df_ticks = df
         return True
 

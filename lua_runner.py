@@ -104,8 +104,13 @@ class LuaStrategyRunner:
             prev_fractal_set = curr_fractal_set
 
             # 2. Быстрая подача тиков через numpy-массивы
+            if "TIME" in group.columns:
+                t_ints = group["TIME"].astype(int).values
+            else:
+                t_ints = np.zeros(len(prices), dtype=int)
+
             for i in range(len(prices)):
-                feed_tick(float(prices[i]))
+                feed_tick(float(prices[i]), int(t_ints[i]))
                 h_len = len(g.history_log)
                 if h_len > prev_len:
                     t = times[i]

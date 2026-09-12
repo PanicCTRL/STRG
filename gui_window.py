@@ -14,12 +14,14 @@ gui_window.py
 
 import os
 import json
+import glob
+import re
 import numpy as np
 import pandas as pd
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QPushButton, QLabel, QFrame, QButtonGroup, QSlider, QSizePolicy,
-    QTreeWidget, QTreeWidgetItem
+    QTreeWidget, QTreeWidgetItem, QComboBox, QFileDialog, QScrollArea
 )
 from PyQt6.QtCore import Qt, QTimer
 import theme
@@ -38,13 +40,16 @@ class MainWindow(QMainWindow):
         self.resize(1280, 780)
 
         # Движок данных
-        self.current_tf = "5M"
-        self.default_file = "Y:/MXU6_260901_260901.txt"
+        saved_settings = self.load_settings()
+        self.current_tf = saved_settings.get("current_tf", "5M")
+        saved_file = saved_settings.get("current_file", "Y:/MXU6_260901_260901.txt")
+        self.default_file = saved_file if os.path.exists(saved_file) else "Y:/MXU6_260901_260901.txt"
         self.aggregator = TickAggregator(self.default_file)
         self.df_candles_full = pd.DataFrame()
 
         # Исполнитель Lua-стратегии
-        self.strategy_file = r"Y:\true_fractal\true_f_formock.lua"
+        saved_strat = saved_settings.get("current_strategy", r"Y:\opening_strategy\mock_opening.lua")
+        self.strategy_file = saved_strat if os.path.exists(saved_strat) else r"Y:\opening_strategy\mock_opening.lua"
         self.runner = LuaStrategyRunner(self.strategy_file)
         self.last_trades = []
         self.last_levels = []
@@ -114,6 +119,29 @@ class MainWindow(QMainWindow):
         self.lbl_inst.setStyleSheet("font-size: 11px; font-weight: bold; color: #aaaaaa; padding-right: 6px; border: none;")
         layout.addWidget(self.lbl_inst)
 
+        sep0 = QFrame()
+        sep0.setFrameShape(QFrame.Shape.VLine)
+        sep0.setStyleSheet("color: #333333; max-width: 1px;")
+        layout.addWidget(sep0)
+
+        # Выбор торгового дня (тиковый файл)
+        self.combo_days = QComboBox()
+        self.combo_days.setObjectName("ComboDays")
+        self.combo_days.setToolTip("Выбор торгового дня (тиковый файл)")
+        self.combo_days.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        layout.addWidget(self.combo_days)
+
+        self.btn_browse = QPushButton("📁")
+        self.btn_browse.setObjectName("BtnBrowseDay")
+        self.btn_browse.setToolTip("Открыть файл торгового дня через проводник...")
+        self.btn_browse.setFixedWidth(24)
+        self.btn_browse.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.btn_browse.clicked.connect(self._on_browse_file)
+        layout.addWidget(self.btn_browse)
+
+        self._populate_day_selector()
+        self.combo_days.currentIndexChanged.connect(self._on_day_changed)
+
         sep = QFrame()
         sep.setFrameShape(QFrame.Shape.VLine)
         sep.setStyleSheet("color: #333333; max-width: 1px;")
@@ -133,6 +161,25 @@ class MainWindow(QMainWindow):
             btn.setToolTip(tooltip)
             btn.clicked.connect(lambda checked, t=text: self.on_top_btn_clicked(t))
             layout.addWidget(btn)
+
+        sep_tf = QFrame()
+        sep_tf.setFrameShape(QFrame.Shape.VLine)
+        sep_tf.setStyleSheet("color: #333333; max-width: 1px;")
+        layout.addWidget(sep_tf)
+
+        lbl_tf = QLabel("ТФ:")
+        lbl_tf.setStyleSheet("font-size: 10px; font-weight: bold; color: #777777; border: none; padding-left: 2px;")
+        layout.addWidget(lbl_tf)
+
+        self.combo_tf = QComboBox()
+        self.combo_tf.setObjectName("ComboTf")
+        self.combo_tf.setToolTip("Выбор таймфрейма свечей")
+        self.combo_tf.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        for tf_val in ["1M", "3M", "5M", "15M", "1H"]:
+            self.combo_tf.addItem(tf_val)
+        self.combo_tf.setCurrentText(self.current_tf)
+        self.combo_tf.currentTextChanged.connect(self.on_tf_changed)
+        layout.addWidget(self.combo_tf)
 
         layout.addStretch()
 
@@ -166,10 +213,10 @@ class MainWindow(QMainWindow):
         self.btn_reset.clicked.connect(self.reset_replay)
         btn_grid.addWidget(self.btn_reset, 0, 0, 2, 1)
 
-        # Ряд 0: Шаг назад (тики)
+        # Ряд 0: Шаг назад (тики с изменением цены)
         self.btn_step_back = QPushButton("⏮ Шаг")
         self.btn_step_back.setProperty("class", "ReplayBtn")
-        self.btn_step_back.setToolTip("Шаг назад (1 тик)")
+        self.btn_step_back.setToolTip("Шаг назад (изменение цены)")
         self.btn_step_back.setFixedWidth(82)
         self.btn_step_back.clicked.connect(self.step_tick_backward)
         btn_grid.addWidget(self.btn_step_back, 0, 1)
@@ -191,10 +238,10 @@ class MainWindow(QMainWindow):
         self.btn_play.clicked.connect(self.toggle_play)
         btn_grid.addWidget(self.btn_play, 0, 2, 2, 1)
 
-        # Ряд 0: Шаг вперед (тики)
+        # Ряд 0: Шаг вперед (тики с изменением цены)
         self.btn_step_fwd = QPushButton("⏭ Шаг")
         self.btn_step_fwd.setProperty("class", "ReplayBtn")
-        self.btn_step_fwd.setToolTip("Шаг вперед (1 тик)")
+        self.btn_step_fwd.setToolTip("Шаг вперед (изменение цены)")
         self.btn_step_fwd.setFixedWidth(82)
         self.btn_step_fwd.clicked.connect(self.step_tick_forward)
         btn_grid.addWidget(self.btn_step_fwd, 0, 3)
@@ -267,14 +314,215 @@ class MainWindow(QMainWindow):
 
         return panel
 
-    def _create_right_panel(self):
-        """Создает правую панель управления в строгом стиле QUIK."""
-        panel = QFrame()
-        panel.setObjectName("RightPanel")
-        panel.setFixedWidth(205)
+    def _create_pnl_card(self, title):
+        """Создает карточку PnL со структурой 2x2 как в TradingView-тестере."""
+        card_box = QFrame()
+        card_box.setObjectName("PnlCard")
+        card_box.setStyleSheet(
+            "QFrame#PnlCard { background-color: #161a1e; border: 1px solid #282f38; border-radius: 2px; padding: 4px; }"
+        )
 
-        layout = QVBoxLayout(panel)
-        layout.setContentsMargins(6, 8, 6, 8)
+        box_layout = QVBoxLayout(card_box)
+        box_layout.setContentsMargins(5, 4, 5, 5)
+        box_layout.setSpacing(3)
+
+        lbl_card_title = QLabel(title)
+        lbl_card_title.setStyleSheet("font-size: 9px; font-weight: bold; color: #8a9ba8; border: none;")
+        box_layout.addWidget(lbl_card_title)
+
+        grid = QGridLayout()
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setHorizontalSpacing(4)
+        grid.setVerticalSpacing(2)
+
+        lbl_pos_cap = QLabel("ПОЗИЦИЯ")
+        lbl_pos_cap.setStyleSheet("font-size: 8.5px; font-weight: bold; color: #5a6e82; border: none;")
+        lbl_pos_val = QLabel("0 (FLAT)")
+        lbl_pos_val.setStyleSheet("font-size: 11px; font-weight: bold; color: #cccccc; border: none;")
+
+        lbl_unreal_cap = QLabel("ПЛАВАЮЩИЙ PnL")
+        lbl_unreal_cap.setStyleSheet("font-size: 8.5px; font-weight: bold; color: #5a6e82; border: none;")
+        lbl_unreal_val = QLabel("0 пт")
+        lbl_unreal_val.setStyleSheet("font-size: 11px; font-weight: bold; color: #888888; border: none;")
+
+        lbl_entry_cap = QLabel("ЦЕНА ВХОДА")
+        lbl_entry_cap.setStyleSheet("font-size: 8.5px; font-weight: bold; color: #5a6e82; border: none;")
+        lbl_entry_val = QLabel("-")
+        lbl_entry_val.setStyleSheet("font-size: 11px; font-weight: bold; color: #cccccc; border: none;")
+
+        lbl_total_cap = QLabel("ИТОГО PnL ДНЯ")
+        lbl_total_cap.setStyleSheet("font-size: 8.5px; font-weight: bold; color: #5a6e82; border: none;")
+        lbl_total_val = QLabel("0 пт")
+        lbl_total_val.setStyleSheet("font-size: 11px; font-weight: bold; color: #888888; border: none;")
+
+        grid.addWidget(lbl_pos_cap, 0, 0)
+        grid.addWidget(lbl_unreal_cap, 0, 1)
+        grid.addWidget(lbl_pos_val, 1, 0)
+        grid.addWidget(lbl_unreal_val, 1, 1)
+
+        grid.addWidget(lbl_entry_cap, 2, 0)
+        grid.addWidget(lbl_total_cap, 2, 1)
+        grid.addWidget(lbl_entry_val, 3, 0)
+        grid.addWidget(lbl_total_val, 3, 1)
+
+        lbl_cnt_cap = QLabel("СДЕЛОК")
+        lbl_cnt_cap.setStyleSheet("font-size: 8.5px; font-weight: bold; color: #5a6e82; border: none;")
+        lbl_cnt_val = QLabel("0")
+        lbl_cnt_val.setStyleSheet("font-size: 11px; font-weight: bold; color: #cccccc; border: none;")
+
+        lbl_res_cap = QLabel("ТЕЙК / СТОП")
+        lbl_res_cap.setStyleSheet("font-size: 8.5px; font-weight: bold; color: #5a6e82; border: none;")
+        lbl_res_val = QLabel("0 / 0")
+        lbl_res_val.setStyleSheet("font-size: 11px; font-weight: bold; color: #888888; border: none;")
+
+        grid.addWidget(lbl_cnt_cap, 4, 0)
+        grid.addWidget(lbl_res_cap, 4, 1)
+        grid.addWidget(lbl_cnt_val, 5, 0)
+        grid.addWidget(lbl_res_val, 5, 1)
+
+        box_layout.addLayout(grid)
+
+        return {
+            "frame": card_box,
+            "lbl_pos": lbl_pos_val,
+            "lbl_entry": lbl_entry_val,
+            "lbl_unreal": lbl_unreal_val,
+            "lbl_total": lbl_total_val,
+            "lbl_trades": lbl_cnt_val,
+            "lbl_result": lbl_res_val,
+        }
+
+    def _set_card_values(self, card, pos_text, entry_text, unreal_pnl, total_pnl, count_trades=0, count_tp=0, count_sl=0):
+        """Обновляет значения и цвета в карточке PnL."""
+        card["lbl_pos"].setText(pos_text)
+        if "LONG" in pos_text:
+            card["lbl_pos"].setStyleSheet("font-size: 11px; font-weight: bold; color: #52c41a; border: none;")
+        elif "SHORT" in pos_text:
+            card["lbl_pos"].setStyleSheet("font-size: 11px; font-weight: bold; color: #ef5350; border: none;")
+        else:
+            card["lbl_pos"].setStyleSheet("font-size: 11px; font-weight: bold; color: #cccccc; border: none;")
+
+        card["lbl_entry"].setText(entry_text)
+
+        # Плавающий PnL
+        if unreal_pnl > 0:
+            card["lbl_unreal"].setText(f"+{unreal_pnl:,} пт".replace(",", " "))
+            card["lbl_unreal"].setStyleSheet("font-size: 11px; font-weight: bold; color: #52c41a; border: none;")
+        elif unreal_pnl < 0:
+            card["lbl_unreal"].setText(f"{unreal_pnl:,} пт".replace(",", " "))
+            card["lbl_unreal"].setStyleSheet("font-size: 11px; font-weight: bold; color: #ef5350; border: none;")
+        else:
+            card["lbl_unreal"].setText("0 пт")
+            card["lbl_unreal"].setStyleSheet("font-size: 11px; font-weight: bold; color: #888888; border: none;")
+
+        # Итого PnL дня
+        if total_pnl > 0:
+            card["lbl_total"].setText(f"+{total_pnl:,} пт".replace(",", " "))
+            card["lbl_total"].setStyleSheet("font-size: 11px; font-weight: bold; color: #26a69a; border: none;")
+        elif total_pnl < 0:
+            card["lbl_total"].setText(f"{total_pnl:,} пт".replace(",", " "))
+            card["lbl_total"].setStyleSheet("font-size: 11px; font-weight: bold; color: #ef5350; border: none;")
+        else:
+            card["lbl_total"].setText("0 пт")
+            card["lbl_total"].setStyleSheet("font-size: 11px; font-weight: bold; color: #888888; border: none;")
+
+        # Количество сделок и результат Тейк / Стоп
+        if "lbl_trades" in card:
+            card["lbl_trades"].setText(str(count_trades))
+        if "lbl_result" in card:
+            card["lbl_result"].setText(f"{count_tp} / {count_sl}")
+            if count_tp > count_sl:
+                card["lbl_result"].setStyleSheet("font-size: 11px; font-weight: bold; color: #52c41a; border: none;")
+            elif count_sl > count_tp:
+                card["lbl_result"].setStyleSheet("font-size: 11px; font-weight: bold; color: #ef5350; border: none;")
+            else:
+                card["lbl_result"].setStyleSheet("font-size: 11px; font-weight: bold; color: #888888; border: none;")
+
+    def _update_pnl_dashboard(self, curr_time, curr_price):
+        """Динамический пересчет PnL для реальных (LONG) и виртуальных (SHORT) сделок."""
+        if not hasattr(self, "real_pnl_card") or not hasattr(self, "virt_pnl_card"):
+            return
+
+        target_np = np.datetime64(curr_time)
+        real_trades = [t for t in self.last_trades if t.get("is_real")]
+        virt_trades = [t for t in self.last_trades if not t.get("is_real")]
+
+        def calc_pnl(trades, fallback_dir="BUY"):
+            closed_pnl = 0
+            active_trade = None
+            count_trades = 0
+            count_tp = 0
+            count_sl = 0
+
+            for tr in trades:
+                e_time = np.datetime64(tr["entry_time"])
+                if e_time > target_np:
+                    continue
+
+                count_trades += 1
+                c_time = np.datetime64(tr["close_time"]) if tr.get("close_time") else None
+                direction = tr.get("direction", fallback_dir)
+                entry_p = float(tr.get("entry_price", 0))
+
+                if c_time is not None and c_time <= target_np:
+                    close_p = float(tr.get("close_price", entry_p))
+                    if direction == "BUY":
+                        closed_pnl += (close_p - entry_p)
+                    else:
+                        closed_pnl += (entry_p - close_p)
+
+                    reason = tr.get("close_reason")
+                    if reason == "TP":
+                        count_tp += 1
+                    elif reason == "SL":
+                        count_sl += 1
+                else:
+                    active_trade = tr
+
+            if active_trade:
+                direction = active_trade.get("direction", fallback_dir)
+                entry_p = float(active_trade.get("entry_price", curr_price))
+                pos_text = "+1 (LONG)" if direction == "BUY" else "-1 (SHORT)"
+                entry_text = f"{int(entry_p):,} ".replace(",", " ")
+                if direction == "BUY":
+                    unrealized_pnl = curr_price - entry_p
+                else:
+                    unrealized_pnl = entry_p - curr_price
+            else:
+                pos_text = "0 (FLAT)"
+                entry_text = "-"
+                unrealized_pnl = 0
+
+            total_pnl = closed_pnl + unrealized_pnl
+            return pos_text, entry_text, int(unrealized_pnl), int(total_pnl), count_trades, count_tp, count_sl
+
+        r_pos, r_entry, r_unreal, r_total, r_cnt, r_tp, r_sl = calc_pnl(real_trades, "BUY")
+        self._set_card_values(self.real_pnl_card, r_pos, r_entry, r_unreal, r_total, r_cnt, r_tp, r_sl)
+
+        v_pos, v_entry, v_unreal, v_total, v_cnt, v_tp, v_sl = calc_pnl(virt_trades, "SELL")
+        self._set_card_values(self.virt_pnl_card, v_pos, v_entry, v_unreal, v_total, v_cnt, v_tp, v_sl)
+
+        if hasattr(self, "lbl_total_trades"):
+            tot = r_cnt + v_cnt
+            self.lbl_total_trades.setText(f"{tot}")
+            self.lbl_total_trades.setToolTip(
+                f"Всего сделок: {tot}\nРеальных (LONG): {r_cnt} (Тейк: {r_tp} / Стоп: {r_sl})\n"
+                f"Виртуальных (SHORT): {v_cnt} (Тейк: {v_tp} / Стоп: {v_sl})"
+            )
+
+    def _create_right_panel(self):
+        """Создает правую панель управления в строгом стиле QUIK с прокруткой."""
+        scroll = QScrollArea()
+        scroll.setObjectName("RightPanelScroll")
+        scroll.setFixedWidth(220)
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+
+        container = QWidget()
+        container.setObjectName("RightPanelContainer")
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(6, 6, 6, 6)
         layout.setSpacing(5)
 
         # Блок режимов
@@ -302,41 +550,33 @@ class MainWindow(QMainWindow):
 
         layout.addSpacing(2)
 
-        # Таймфреймы (2 ряда для компактности)
-        lbl_tf_title = QLabel("ТАЙМФРЕЙМ")
-        lbl_tf_title.setStyleSheet("font-size: 10px; font-weight: bold; color: #666666; border: none;")
-        layout.addWidget(lbl_tf_title)
-
-        self.tf_group = QButtonGroup(self)
-        self.tf_buttons = {}
-
-        tf_grid = QGridLayout()
-        tf_grid.setSpacing(2)
-        tf_list = [("1M", 0, 0), ("3M", 0, 1), ("5M", 0, 2), ("15M", 1, 0), ("1H", 1, 1)]
-        for tf_name, r, c in tf_list:
-            btn = QPushButton(tf_name)
-            btn.setCheckable(True)
-            btn.setProperty("class", "TfBtn")
-            btn.clicked.connect(lambda checked, name=tf_name: self.on_tf_clicked(name))
-            self.tf_group.addButton(btn)
-            tf_grid.addWidget(btn, r, c)
-            self.tf_buttons[tf_name] = btn
-
-        self.tf_buttons["5M"].setChecked(True)
-        layout.addLayout(tf_grid)
-
-        layout.addSpacing(2)
-
         # Стратегия Lua
         lbl_strat_title = QLabel("СТРАТЕГИЯ LUA")
         lbl_strat_title.setStyleSheet("font-size: 10px; font-weight: bold; color: #666666; border: none;")
         layout.addWidget(lbl_strat_title)
 
-        self.lbl_strat_name = QLabel("true_f_formock.lua")
-        self.lbl_strat_name.setStyleSheet(
-            "font-size: 10px; color: #cccccc; border: 1px solid #333333; padding: 4px; background: #161616;"
-        )
-        layout.addWidget(self.lbl_strat_name)
+        strat_h_box = QHBoxLayout()
+        strat_h_box.setSpacing(2)
+        strat_h_box.setContentsMargins(0, 0, 0, 0)
+
+        self.combo_strategy = QComboBox()
+        self.combo_strategy.setObjectName("ComboStrategy")
+        self.combo_strategy.setToolTip("Выбор торговой стратегии на Lua")
+        self.combo_strategy.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        strat_h_box.addWidget(self.combo_strategy, stretch=1)
+
+        self.btn_browse_strat = QPushButton("📁")
+        self.btn_browse_strat.setObjectName("BtnBrowseStrat")
+        self.btn_browse_strat.setToolTip("Открыть файл стратегии (.lua) через проводник...")
+        self.btn_browse_strat.setFixedWidth(24)
+        self.btn_browse_strat.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.btn_browse_strat.clicked.connect(self._on_browse_strategy)
+        strat_h_box.addWidget(self.btn_browse_strat)
+
+        layout.addLayout(strat_h_box)
+
+        self._populate_strategy_selector()
+        self.combo_strategy.currentIndexChanged.connect(self._on_strategy_changed)
 
         layout.addSpacing(2)
 
@@ -368,24 +608,66 @@ class MainWindow(QMainWindow):
         layout.addWidget(lbl_layers_title)
 
         self.tree_visibility = self._create_visibility_tree()
-        layout.addWidget(self.tree_visibility, stretch=1)
+        self.tree_visibility.setMinimumHeight(150)
+        layout.addWidget(self.tree_visibility)
 
         layout.addSpacing(2)
 
-        # Перезаходы
+        # Результат PnL
+        lbl_res_title = QLabel("РЕЗУЛЬТАТ (PnL)")
+        lbl_res_title.setStyleSheet("font-size: 10px; font-weight: bold; color: #666666; border: none;")
+        layout.addWidget(lbl_res_title)
+
+        self.real_pnl_card = self._create_pnl_card("РЕАЛЬНАЯ (LONG)")
+        layout.addWidget(self.real_pnl_card["frame"])
+
+        self.virt_pnl_card = self._create_pnl_card("ВИРТУАЛЬНАЯ (SHORT)")
+        layout.addWidget(self.virt_pnl_card["frame"])
+
+        layout.addSpacing(2)
+
+        # Статистика: Перезаходы и Всего сделок
+        stats_layout = QHBoxLayout()
+        stats_layout.setSpacing(4)
+
+        # Колонка: Перезаходы
+        col_att = QVBoxLayout()
+        col_att.setSpacing(2)
         lbl_att_title = QLabel("ПЕРЕЗАХОДЫ")
         lbl_att_title.setStyleSheet("font-size: 10px; font-weight: bold; color: #666666; border: none;")
-        layout.addWidget(lbl_att_title)
-
         self.lbl_attempts = QLabel("4 / 4")
         self.lbl_attempts.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.lbl_attempts.setStyleSheet(
             "background-color: #242010; color: #d4b106; font-size: 12px; font-weight: bold; "
             "padding: 4px; border: 1px solid #453c15;"
         )
-        layout.addWidget(self.lbl_attempts)
+        self.lbl_attempts.setToolTip("Оставшиеся попытки перезахода на текущем активном уровне (из 4)")
+        col_att.addWidget(lbl_att_title)
+        col_att.addWidget(self.lbl_attempts)
 
-        return panel
+        # Колонка: Всего сделок
+        col_trades = QVBoxLayout()
+        col_trades.setSpacing(2)
+        lbl_trades_title = QLabel("ВСЕГО СДЕЛОК")
+        lbl_trades_title.setStyleSheet("font-size: 10px; font-weight: bold; color: #666666; border: none;")
+        self.lbl_total_trades = QLabel("0")
+        self.lbl_total_trades.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_total_trades.setStyleSheet(
+            "background-color: #101c24; color: #00b0ff; font-size: 12px; font-weight: bold; "
+            "padding: 4px; border: 1px solid #1c3547;"
+        )
+        self.lbl_total_trades.setToolTip("Общее количество совершенных сделок к текущему моменту")
+        col_trades.addWidget(lbl_trades_title)
+        col_trades.addWidget(self.lbl_total_trades)
+
+        stats_layout.addLayout(col_att)
+        stats_layout.addLayout(col_trades)
+        layout.addLayout(stats_layout)
+
+        layout.addStretch()
+
+        scroll.setWidget(container)
+        return scroll
 
     def load_settings(self):
         """Загружает сохраненные настройки видимости и веток дерева из settings.json."""
@@ -427,6 +709,9 @@ class MainWindow(QMainWindow):
             scan_expanded(top_item)
 
         data = {
+            "current_file": self.default_file,
+            "current_tf": self.current_tf,
+            "current_strategy": self.strategy_file,
             "visibility": vis,
             "tree_expanded": expanded,
         }
@@ -461,6 +746,58 @@ class MainWindow(QMainWindow):
                 "text": "Индикаторы",
                 "children": [
                     {"text": "Фракталы Вильямса (▲/▼)", "key": "classic_fractals", "default": True},
+                    {
+                        "text": "Линии плато",
+                        "children": [
+                            {"text": "Плато вверх (High)", "key": "plateau_high", "default": True},
+                            {"text": "Плато вниз (Low)", "key": "plateau_low", "default": True},
+                        ]
+                    },
+                    {
+                        "text": "Каналы и коридоры",
+                        "children": [
+                            {
+                                "text": "Фракталы и плато",
+                                "children": [
+                                    {"text": "Верхняя граница (High)", "key": "ch0_orange_upper", "default": True},
+                                    {"text": "Нижняя граница (Low)", "key": "ch0_orange_lower", "default": True},
+                                    {"text": "Заливка коридора", "key": "ch0_orange_fill", "default": True},
+                                ]
+                            },
+                            {
+                                "text": "Классика Вильямса",
+                                "children": [
+                                    {"text": "Верхняя граница (High)", "key": "ch1_green_upper", "default": True},
+                                    {"text": "Нижняя граница (Low)", "key": "ch1_green_lower", "default": True},
+                                    {"text": "Заливка коридора", "key": "ch1_green_fill", "default": True},
+                                ]
+                            },
+                            {
+                                "text": "Диапазонный",
+                                "children": [
+                                    {"text": "Верхняя граница (High)", "key": "ch2_purple_upper", "default": True},
+                                    {"text": "Нижняя граница (Low)", "key": "ch2_purple_lower", "default": True},
+                                    {"text": "Заливка коридора", "key": "ch2_purple_fill", "default": True},
+                                ]
+                            },
+                            {
+                                "text": "Структурный",
+                                "children": [
+                                    {"text": "Верхняя граница (High)", "key": "ch3_blue_upper", "default": True},
+                                    {"text": "Нижняя граница (Low)", "key": "ch3_blue_lower", "default": True},
+                                    {"text": "Заливка коридора", "key": "ch3_blue_fill", "default": True},
+                                ]
+                            },
+                            {
+                                "text": "Вильямс с расширением плато",
+                                "children": [
+                                    {"text": "Верхняя граница (High)", "key": "ch4_cyan_upper", "default": True},
+                                    {"text": "Нижняя граница (Low)", "key": "ch4_cyan_lower", "default": True},
+                                    {"text": "Заливка коридора", "key": "ch4_cyan_fill", "default": True},
+                                ]
+                            },
+                        ]
+                    },
                 ]
             },
             {
@@ -469,6 +806,13 @@ class MainWindow(QMainWindow):
                     {"text": "Линии уровней", "key": "fractal_levels", "default": True},
                     {"text": "Метки цен", "key": "level_labels", "default": True},
                     {"text": "Только активные в памяти", "key": "levels_active_only", "default": False},
+                ]
+            },
+            {
+                "text": "Слом структуры (CHoCH)",
+                "children": [
+                    {"text": "Стрелки слома", "key": "choch_arrows", "default": True},
+                    {"text": "Полки уровней", "key": "choch_shelves", "default": True},
                 ]
             },
             {
@@ -590,6 +934,220 @@ class MainWindow(QMainWindow):
         return layout
 
     # ============================================================
+    # Управление торговыми днями и файлами
+    # ============================================================
+    def _update_inst_label(self):
+        """Обновляет заголовок инструмента с датой и таймфреймом."""
+        fname = os.path.basename(self.default_file)
+        m = re.search(r"(\d{2})(\d{2})(\d{2})", fname)
+        if m:
+            d_str = f"{m.group(3)}.{m.group(2)}.20{m.group(1)}"
+            self.lbl_inst.setText(f"MIX-9.26  {d_str} [{self.current_tf}]")
+        else:
+            self.lbl_inst.setText(f"MIX-9.26 [{self.current_tf}]")
+
+    def _scan_tick_files(self):
+        """Находит все тиковые файлы на Y:/ и в подпапках, сортирует по дате."""
+        found = []
+        seen_paths = set()
+        search_dirs = ["Y:/", "Y:/ticks", os.path.dirname(self.default_file)]
+
+        for d in search_dirs:
+            if not os.path.exists(d):
+                continue
+            for pat in [os.path.join(d, "*.txt")]:
+                for fpath in glob.glob(pat):
+                    norm_path = os.path.normpath(fpath).replace("\\", "/")
+                    if norm_path in seen_paths:
+                        continue
+                    seen_paths.add(norm_path)
+
+                    fname = os.path.basename(norm_path)
+                    # Проверяем шаблон имени тиков
+                    m = re.search(r"(\d{2})(\d{2})(\d{2})", fname)
+                    if m and any(k in fname.upper() for k in ["MX", "MIX", "RI", "SI", "SPB", "SR", "GZ"]):
+                        y, mth, day = m.group(1), m.group(2), m.group(3)
+                        date_key = f"20{y}-{mth}-{day}"
+                        label = f"{day}.{mth}.20{y}  [{fname}]"
+                        found.append((date_key, label, norm_path))
+                    else:
+                        try:
+                            with open(norm_path, "r", encoding="utf-8", errors="replace") as f_test:
+                                first_line = f_test.readline()
+                                if "<TICKER>" in first_line:
+                                    found.append((fname, fname, norm_path))
+                        except Exception:
+                            pass
+
+        found.sort(key=lambda x: x[0])
+        return found
+
+    def _populate_day_selector(self, select_path=None):
+        """Заполняет выпадающий список доступными торговыми днями."""
+        if not hasattr(self, "combo_days"):
+            return
+        self.combo_days.blockSignals(True)
+        self.combo_days.clear()
+
+        files = self._scan_tick_files()
+        target_path = os.path.normpath(select_path or self.default_file).replace("\\", "/")
+        select_idx = 0
+
+        for i, (date_key, label, fpath) in enumerate(files):
+            self.combo_days.addItem(label, fpath)
+            if os.path.normpath(fpath).replace("\\", "/") == target_path:
+                select_idx = i
+
+        if target_path and target_path not in [f[2] for f in files] and os.path.exists(target_path):
+            fname = os.path.basename(target_path)
+            self.combo_days.addItem(f"{fname}", target_path)
+            select_idx = self.combo_days.count() - 1
+
+        if self.combo_days.count() > 0:
+            self.combo_days.setCurrentIndex(select_idx)
+
+        self.combo_days.blockSignals(False)
+
+    def _on_day_changed(self, index):
+        """Вызывается при смене выбранного дня в выпадающем списке."""
+        if index < 0:
+            return
+        fpath = self.combo_days.itemData(index)
+        if not fpath:
+            return
+
+        norm_cur = os.path.normpath(self.default_file).replace("\\", "/")
+        norm_new = os.path.normpath(fpath).replace("\\", "/")
+        if norm_cur == norm_new:
+            return
+
+        self.switch_to_file(fpath)
+
+    def _on_browse_file(self):
+        """Диалог выбора произвольного файла тиков через проводник."""
+        initial_dir = os.path.dirname(self.default_file) if os.path.exists(self.default_file) else "Y:/"
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "Выбрать файл торгового дня", initial_dir, "Файлы тиков (*.txt);;Все файлы (*.*)"
+        )
+        if file_path:
+            norm_path = os.path.normpath(file_path).replace("\\", "/")
+            self._populate_day_selector(select_path=norm_path)
+            self.switch_to_file(norm_path)
+
+    def switch_to_file(self, fpath):
+        """Переключает STRG на новый тиковый файл и полностью обновляет состояние."""
+        if not os.path.exists(fpath):
+            self.lbl_status.setText(f"Ошибка: файл {fpath} не найден!")
+            return
+
+        self.pause_replay()
+        self.default_file = fpath
+        self._ticks_loaded = False
+
+        self._update_inst_label()
+        self.lbl_status.setText(f"Чтение тиков {os.path.basename(fpath)}...")
+        self.load_and_render(reload_lua=True, auto_range=True)
+        self.chart_canvas.getPlotItem().autoRange()
+        self.save_settings()
+
+    def _scan_strategy_files(self):
+        r"""Сканирует известные папки на Y:\ на наличие Lua-стратегий и моков."""
+        candidates = [
+            (r"Y:\opening_strategy\mock_opening.lua", "mock_opening.lua"),
+            (r"Y:\true_fractal\true_f_formock.lua", "true_f_formock.lua"),
+            (r"Y:\support_pro\mock_test.lua", "mock_test.lua"),
+        ]
+        seen = set()
+        result = []
+        for path, name in candidates:
+            if os.path.exists(path):
+                norm = os.path.normpath(path).replace("\\", "/")
+                seen.add(norm)
+                result.append((norm, name))
+
+        try:
+            for root, dirs, files in os.walk("Y:/"):
+                if any(x in root for x in [".git", ".venv", "__pycache__", "build", "dist"]):
+                    continue
+                for fname in files:
+                    if fname.endswith(".lua") and ("mock" in fname.lower() or "formock" in fname.lower()):
+                        full = os.path.normpath(os.path.join(root, fname)).replace("\\", "/")
+                        if full not in seen:
+                            seen.add(full)
+                            result.append((full, fname))
+        except Exception:
+            pass
+
+        return result
+
+    def _populate_strategy_selector(self, select_path=None):
+        """Заполняет выпадающий список доступных Lua-стратегий."""
+        if not hasattr(self, "combo_strategy"):
+            return
+        self.combo_strategy.blockSignals(True)
+        self.combo_strategy.clear()
+
+        strategies = self._scan_strategy_files()
+        target = os.path.normpath(select_path or self.strategy_file).replace("\\", "/")
+        select_idx = 0
+
+        for i, (path, name) in enumerate(strategies):
+            self.combo_strategy.addItem(name, path)
+            if path == target:
+                select_idx = i
+
+        if target and target not in [s[0] for s in strategies] and os.path.exists(target):
+            fname = os.path.basename(target)
+            self.combo_strategy.addItem(fname, target)
+            select_idx = self.combo_strategy.count() - 1
+
+        if self.combo_strategy.count() > 0:
+            self.combo_strategy.setCurrentIndex(select_idx)
+
+        self.combo_strategy.blockSignals(False)
+
+    def _on_strategy_changed(self, index):
+        """Вызывается при выборе стратегии из выпадающего списка."""
+        if index < 0:
+            return
+        strat_path = self.combo_strategy.itemData(index)
+        if not strat_path:
+            return
+        norm_cur = os.path.normpath(self.strategy_file).replace("\\", "/")
+        norm_new = os.path.normpath(strat_path).replace("\\", "/")
+        if norm_cur == norm_new:
+            return
+        self.switch_to_strategy(strat_path)
+
+    def _on_browse_strategy(self):
+        """Диалог выбора файла Lua-стратегии через проводник."""
+        initial_dir = os.path.dirname(self.strategy_file) if os.path.exists(self.strategy_file) else "Y:/"
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "Выбрать Lua-стратегию", initial_dir, "Скрипты Lua (*.lua);;Все файлы (*.*)"
+        )
+        if file_path:
+            norm_path = os.path.normpath(file_path).replace("\\", "/")
+            self._populate_strategy_selector(select_path=norm_path)
+            self.switch_to_strategy(norm_path)
+
+    def switch_to_strategy(self, strat_path):
+        """Переключает текущую Lua-стратегию и перезапускает расчет."""
+        if not os.path.exists(strat_path):
+            self.lbl_status.setText(f"Ошибка: файл стратегии {strat_path} не найден!")
+            return
+
+        self.pause_replay()
+        self.strategy_file = strat_path
+        self.runner = LuaStrategyRunner(self.strategy_file)
+        self.last_trades = []
+        self.last_levels = []
+        self.last_stats = {}
+        self.lbl_status.setText(f"Загрузка стратегии {os.path.basename(strat_path)}...")
+        self.load_and_render(reload_lua=True, auto_range=False)
+        self.lbl_status.setText(f"Статус: Подключена стратегия {os.path.basename(strat_path)}")
+        self.save_settings()
+
+    # ============================================================
     # Логика загрузки и воспроизведения
     # ============================================================
     def load_and_render(self, reload_lua=True, auto_range=False):
@@ -597,6 +1155,8 @@ class MainWindow(QMainWindow):
         if not os.path.exists(self.default_file):
             self.lbl_status.setText(f"Файл {self.default_file} не найден!")
             return
+
+        self._update_inst_label()
 
         if not self._ticks_loaded:
             self.lbl_status.setText(f"Чтение тиков {os.path.basename(self.default_file)}...")
@@ -608,9 +1168,10 @@ class MainWindow(QMainWindow):
 
         # Запуск Lua-стратегии
         if reload_lua or not self.last_trades:
-            self.lbl_status.setText("Выполнение Lua-стратегии true_f_formock.lua...")
+            strat_name = os.path.basename(self.strategy_file)
+            self.lbl_status.setText(f"Выполнение Lua-стратегии {strat_name}...")
             self.last_trades, self.last_levels, self.last_stats = self.runner.run(
-                self.aggregator.df_ticks, bar_period_sec=180
+                self.aggregator.df_ticks, bar_period_sec=300
             )
 
         # Полные свечи под текущий ТФ и установка стабильной шкалы времени
@@ -619,6 +1180,8 @@ class MainWindow(QMainWindow):
 
         # Отрисовка текущего кадра
         self.render_current_frame(auto_range=auto_range)
+        if auto_range:
+            self.chart_canvas.getPlotItem().autoRange()
 
     def render_current_frame(self, auto_range=False):
         """Отрисовывает состояние рынка и стратегии в момент self.current_tick_idx."""
@@ -666,9 +1229,15 @@ class MainWindow(QMainWindow):
 
         # Отрисовка
         self.chart_canvas.render_candles(visible_candles, auto_range=auto_range)
+        self.chart_canvas.render_signal_corridor(visible_candles)
         self.chart_canvas.render_classic_fractals(visible_candles)
+        self.chart_canvas.render_plateaus(visible_candles)
         self.chart_canvas.render_fractal_levels(self.last_levels, visible_candles)
+        self.chart_canvas.render_structure_breaks(visible_candles)
         self.chart_canvas.render_trades(self.last_trades, visible_candles)
+
+        # Обновление PnL дашборда (Реальная и Виртуальная)
+        self._update_pnl_dashboard(curr_time, curr_price)
 
         # Счётчик оставшихся перезаходов на текущем активном уровне
         real_trades_before = [t for t in self.last_trades if t.get("is_real") and np.datetime64(t["entry_time"]) <= target_np]
@@ -711,25 +1280,35 @@ class MainWindow(QMainWindow):
         self.replay_timer.stop()
 
     def step_tick_forward(self):
-        """Шаг вперед на 1 тик."""
+        """Шаг вперед (пропуская тики с одинаковой ценой до следующего изменения)."""
         self.pause_replay()
         if self.aggregator.df_ticks is None or self.aggregator.df_ticks.empty:
             return
-        n_ticks = len(self.aggregator.df_ticks)
+        prices = self.aggregator.df_ticks["PRICE"].values
+        n_ticks = len(prices)
         if self.current_tick_idx < n_ticks - 1:
-            self.current_tick_idx += 1
+            curr_p = prices[self.current_tick_idx]
+            idx = self.current_tick_idx + 1
+            while idx < n_ticks and prices[idx] == curr_p:
+                idx += 1
+            self.current_tick_idx = min(idx, n_ticks - 1)
             self.slider_time.blockSignals(True)
             self.slider_time.setValue(self.current_tick_idx)
             self.slider_time.blockSignals(False)
             self.render_current_frame(auto_range=False)
 
     def step_tick_backward(self):
-        """Шаг назад на 1 тик."""
+        """Шаг назад (пропуская тики с одинаковой ценой до предыдущего изменения)."""
         self.pause_replay()
         if self.aggregator.df_ticks is None or self.aggregator.df_ticks.empty:
             return
+        prices = self.aggregator.df_ticks["PRICE"].values
         if self.current_tick_idx > 0:
-            self.current_tick_idx -= 1
+            curr_p = prices[self.current_tick_idx]
+            idx = self.current_tick_idx - 1
+            while idx >= 0 and prices[idx] == curr_p:
+                idx -= 1
+            self.current_tick_idx = max(0, idx)
             self.slider_time.blockSignals(True)
             self.slider_time.setValue(self.current_tick_idx)
             self.slider_time.blockSignals(False)
@@ -886,15 +1465,29 @@ class MainWindow(QMainWindow):
         else:
             self.lbl_status.setText(f"Статус: Нажата кнопка '{btn_name}'")
 
-    def on_tf_clicked(self, tf_name):
+    def on_tf_changed(self, tf_name):
+        if not tf_name:
+            return
         self.current_tf = tf_name
+        self._update_inst_label()
         self.df_candles_full = self.aggregator.get_candles(self.current_tf)
         self.chart_canvas.set_full_timeline(self.df_candles_full)
         self.render_current_frame(auto_range=False)
+        self.save_settings()
+
+    def on_tf_clicked(self, tf_name):
+        """Алиас для переключения таймфрейма."""
+        if hasattr(self, "combo_tf"):
+            self.combo_tf.setCurrentText(tf_name)
+        else:
+            self.on_tf_changed(tf_name)
 
     def on_refresh_clicked(self):
+        """Горячая перезагрузка текущей Lua-стратегии."""
+        self.pause_replay()
+        self.runner = LuaStrategyRunner(self.strategy_file)
         self.load_and_render(reload_lua=True, auto_range=False)
-        self.lbl_status.setText("Статус: Lua-скрипт перезагружен, график обновлен!")
+        self.lbl_status.setText(f"Статус: Стратегия {os.path.basename(self.strategy_file)} перезагружена, график обновлен!")
 
     def closeEvent(self, event):
         """Сохраняет настройки перед закрытием приложения."""
