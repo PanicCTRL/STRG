@@ -185,8 +185,8 @@ class MainWindow(QMainWindow):
         self.df_candles_full = pd.DataFrame()
 
         # Исполнитель Lua-стратегии
-        saved_strat = saved_settings.get("current_strategy", r"Y:\opening_strategy\mock_opening.lua")
-        self.strategy_file = saved_strat if os.path.exists(saved_strat) else r"Y:\opening_strategy\mock_opening.lua"
+        saved_strat = saved_settings.get("current_strategy", r"Y:\true_fractal\mock_opening.lua")
+        self.strategy_file = saved_strat if os.path.exists(saved_strat) else r"Y:\true_fractal\mock_opening.lua"
         self.runner = LuaStrategyRunner(self.strategy_file)
         self.last_trades = []
         self.last_levels = []
@@ -1274,7 +1274,7 @@ class MainWindow(QMainWindow):
     def _scan_strategy_files(self):
         r"""Сканирует известные папки на Y:\ на наличие Lua-стратегий и моков."""
         candidates = [
-            (r"Y:\opening_strategy\mock_opening.lua", "mock_opening.lua"),
+            (r"Y:\true_fractal\mock_opening.lua", "mock_opening.lua"),
             (r"Y:\true_fractal\true_f_formock.lua", "true_f_formock.lua"),
             (r"Y:\support_pro\mock_test.lua", "mock_test.lua"),
         ]
