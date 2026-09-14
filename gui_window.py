@@ -29,6 +29,7 @@ import theme
 from chart_canvas import ChartCanvas
 from tick_aggregator import TickAggregator
 from lua_runner import LuaStrategyRunner
+from fractal_zigzag import calculate_fractal_zigzag
 
 SETTINGS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "settings.json")
 
@@ -1459,7 +1460,11 @@ class MainWindow(QMainWindow):
         self.chart_canvas.render_candles(visible_candles, auto_range=auto_range)
         self.chart_canvas.render_signal_corridor(visible_candles)
         self.chart_canvas.render_classic_fractals(visible_candles)
-        pivots = getattr(self.aggregator, "last_pivots", [])
+        # Динамический калькулятор Зиг-Зага в реальном времени с привязкой к текущей формирующейся свече
+        if self.chart_canvas.visibility.get("fractal_zigzag", True) and len(visible_candles) >= 2:
+            _, pivots = calculate_fractal_zigzag(visible_candles, dev_percent=0.9, calculate_projected=True)
+        else:
+            pivots = []
         self.chart_canvas.render_zigzag(pivots, visible_candles)
         self.chart_canvas.render_plateaus(visible_candles)
         self.chart_canvas.render_fractal_levels(self.last_levels, visible_candles)

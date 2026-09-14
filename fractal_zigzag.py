@@ -139,25 +139,73 @@ def calculate_fractal_zigzag(df_candles, dev_percent=0.9, min_swing_pts=None, pi
                 curr_high = h
                 curr_high_idx = i
 
-    # Проекция незакрытого луча (Calculate projected pivots)
-    if calculate_projected:
+    # Проекция незакрытого динамического луча на текущей формирующейся свече (индекс n - 1)
+    if calculate_projected and n > 0:
+        last_i = n - 1
+        last_bar = float(bar_indices[last_i])
+        last_time = times[last_i]
+        last_high = float(highs[last_i])
+        last_low = float(lows[last_i])
+
         if trend == 1:
-            pivots.append({
-                "idx": curr_high_idx,
-                "bar_idx": float(bar_indices[curr_high_idx]),
-                "time": times[curr_high_idx],
-                "price": float(curr_high),
-                "type": "HIGH",
-                "projected": True
-            })
+            if curr_high_idx == last_i:
+                # Текущая свеча сама является вершиной -> линия идет ВВЕРХ к максимуму текущей свечи
+                pivots.append({
+                    "idx": last_i,
+                    "bar_idx": last_bar,
+                    "time": last_time,
+                    "price": last_high,
+                    "type": "HIGH",
+                    "projected": True
+                })
+            else:
+                # Вершина была раньше, а сейчас идет откат -> вершина на curr_high_idx,
+                # а от нее линия идет ВНИЗ к МИНИМУМУ текущей свечи!
+                pivots.append({
+                    "idx": curr_high_idx,
+                    "bar_idx": float(bar_indices[curr_high_idx]),
+                    "time": times[curr_high_idx],
+                    "price": float(curr_high),
+                    "type": "HIGH",
+                    "projected": True
+                })
+                pivots.append({
+                    "idx": last_i,
+                    "bar_idx": last_bar,
+                    "time": last_time,
+                    "price": last_low,
+                    "type": "LOW",
+                    "projected": True
+                })
         elif trend == -1:
-            pivots.append({
-                "idx": curr_low_idx,
-                "bar_idx": float(bar_indices[curr_low_idx]),
-                "time": times[curr_low_idx],
-                "price": float(curr_low),
-                "type": "LOW",
-                "projected": True
-            })
+            if curr_low_idx == last_i:
+                # Текущая свеча сама является низиной -> линия идет ВНИЗ к минимуму текущей свечи
+                pivots.append({
+                    "idx": last_i,
+                    "bar_idx": last_bar,
+                    "time": last_time,
+                    "price": last_low,
+                    "type": "LOW",
+                    "projected": True
+                })
+            else:
+                # Низина была раньше, а сейчас идет отскок -> низина на curr_low_idx,
+                # а от нее линия идет ВВЕРХ к МАКСИМУМУ текущей свечи!
+                pivots.append({
+                    "idx": curr_low_idx,
+                    "bar_idx": float(bar_indices[curr_low_idx]),
+                    "time": times[curr_low_idx],
+                    "price": float(curr_low),
+                    "type": "LOW",
+                    "projected": True
+                })
+                pivots.append({
+                    "idx": last_i,
+                    "bar_idx": last_bar,
+                    "time": last_time,
+                    "price": last_high,
+                    "type": "HIGH",
+                    "projected": True
+                })
 
     return df, pivots
