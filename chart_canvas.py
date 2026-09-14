@@ -128,6 +128,7 @@ class ChartCanvas(pg.PlotWidget):
             "current_price": True,
             "crosshair": True,
             "classic_fractals": True,
+            "fractal_zigzag": True,
             "plateau_high": True,
             "plateau_low": True,
             "ch0_orange_upper": True,
@@ -452,6 +453,60 @@ class ChartCanvas(pg.PlotWidget):
             )
             pi.addItem(sp_dn)
             self._chart_items.append(sp_dn)
+
+    def render_zigzag(self, pivots, df_candles):
+        """
+        Отрисовывает ломаную линию фрактального Зиг-Зага (как на TradingView):
+        - Небесно-голубая линия (ZIGZAG_LINE, толщина 2.0px)
+        - Круглые маркеры на вершинах High (зеленый) и впадинах Low (красный)
+        - Бейджи с ценой пивота
+        """
+        if not self.visibility.get("fractal_zigzag", True):
+            return
+
+        if not pivots or df_candles is None or len(pivots) < 2:
+            return
+
+        pi = self.getPlotItem()
+
+        # 1. Ломаная линия ЗигЗага
+        x_coords = [float(p["bar_idx"]) for p in pivots]
+        y_coords = [float(p["price"]) for p in pivots]
+
+        pen_zigzag = pg.mkPen(color=theme.ZIGZAG_LINE, width=2.0)
+        pen_zigzag.setCosmetic(True)
+
+        zigzag_curve = pg.PlotCurveItem(x=x_coords, y=y_coords, pen=pen_zigzag)
+        pi.addItem(zigzag_curve)
+        self._chart_items.append(zigzag_curve)
+
+        # 2. Точки вершин и низин с плашками цен
+        font_badge = QFont("Tahoma", 7, QFont.Weight.Bold)
+        for p in pivots:
+            bx = float(p["bar_idx"])
+            py = float(p["price"])
+            is_high = (p["type"] == "HIGH")
+
+            dot_color = theme.ZIGZAG_HIGH_DOT if is_high else theme.ZIGZAG_LOW_DOT
+            sp_dot = pg.ScatterPlotItem(
+                x=[bx], y=[py], symbol="o", size=8,
+                pen=pg.mkPen(color="#111111", width=1.5),
+                brush=pg.mkBrush(dot_color)
+            )
+            pi.addItem(sp_dot)
+            self._chart_items.append(sp_dot)
+
+            # Текстовая плашка цены над вершиной / под низиной
+            badge = pg.TextItem(
+                text=f" {int(py)} ",
+                color="#ffffff",
+                fill=pg.mkBrush(dot_color if is_high else "#b71c1c"),
+                anchor=(0.5, 1.3 if is_high else -0.3)
+            )
+            badge.setFont(font_badge)
+            badge.setPos(bx, py)
+            pi.addItem(badge)
+            self._chart_items.append(badge)
 
     def render_plateaus(self, df_candles):
         """

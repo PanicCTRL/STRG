@@ -6,14 +6,53 @@ tick_aggregator.py
 import pandas as pd
 import numpy as np
 from datetime import datetime
+import glob
+from fractal_zigzag import calculate_fractal_zigzag
 
 
 class TickAggregator:
     def __init__(self, file_path=None):
         self.file_path = file_path
         self.df_ticks = None
+        self.last_pivots = []
+
+    def load_all_files(self, file_paths=None):
+        """Загружает все доступные тиковые файлы и склеивает их в единый сквозной поток."""
+        if not file_paths:
+            file_paths = sorted(glob.glob("Y:/MXU6_*.txt"))
+        if not file_paths:
+            return False
+
+        dfs = []
+        for fp in file_paths:
+            try:
+                df = pd.read_csv(
+                    fp,
+                    usecols=[2, 3, 4, 5],
+                    names=["DATE", "TIME", "PRICE", "VOL"],
+                    header=0,
+                    dtype={"DATE": str, "TIME": str, "PRICE": float, "VOL": int}
+                )
+                time_str = df["TIME"].str.zfill(6)
+                dt_str = df["DATE"] + time_str
+                df["DATETIME"] = pd.to_datetime(dt_str, format="%Y%m%d%H%M%S")
+                dfs.append(df)
+            except Exception as e:
+                print(f"Error loading {fp}: {e}")
+
+        if not dfs:
+            return False
+
+        full_df = pd.concat(dfs, ignore_index=True)
+        full_df = full_df.sort_values("DATETIME", kind="stable").reset_index(drop=True)
+        self.df_ticks = full_df
+        self.file_path = "ALL_DAYS"
+        return True
 
     def load_file(self, file_path=None):
+        if file_path == 'ALL_DAYS' or self.file_path == 'ALL_DAYS':
+            return self.load_all_files()
+
         """Быстро загружает тиковый файл Финама (DATE, TIME, LAST, VOL)."""
         if file_path:
             self.file_path = file_path
@@ -69,8 +108,9 @@ class TickAggregator:
         candles["timestamp"] = candles["time"].astype("int64") // 10**9
         candles["bar_idx"] = np.arange(len(candles))
 
-        # Считаем фракталы
+        # Считаем фракталы и Зиг-Заг
         candles = self.calculate_fractals(candles)
+        candles, self.last_pivots = calculate_fractal_zigzag(candles)
         return candles
 
     @staticmethod

@@ -746,6 +746,7 @@ class MainWindow(QMainWindow):
                 "text": "Индикаторы",
                 "children": [
                     {"text": "Фракталы Вильямса (▲/▼)", "key": "classic_fractals", "default": True},
+                    {"text": "Фрактальный Зиг-Заг (M15/M5)", "key": "fractal_zigzag", "default": True},
                     {
                         "text": "Линии плато",
                         "children": [
@@ -938,6 +939,9 @@ class MainWindow(QMainWindow):
     # ============================================================
     def _update_inst_label(self):
         """Обновляет заголовок инструмента с датой и таймфреймом."""
+        if self.default_file == "ALL_DAYS":
+            self.lbl_inst.setText(f"MIX-9.26  Все дни (28.08 - 11.09) [{self.current_tf}]")
+            return
         fname = os.path.basename(self.default_file)
         m = re.search(r"(\d{2})(\d{2})(\d{2})", fname)
         if m:
@@ -980,6 +984,8 @@ class MainWindow(QMainWindow):
                             pass
 
         found.sort(key=lambda x: x[0])
+        if found:
+            found.insert(0, ("000000_ALL", "Все доступные дни подряд (28.08 - 11.09)", "ALL_DAYS"))
         return found
 
     def _populate_day_selector(self, select_path=None):
@@ -1036,7 +1042,7 @@ class MainWindow(QMainWindow):
 
     def switch_to_file(self, fpath):
         """Переключает STRG на новый тиковый файл и полностью обновляет состояние."""
-        if not os.path.exists(fpath):
+        if fpath != "ALL_DAYS" and not os.path.exists(fpath):
             self.lbl_status.setText(f"Ошибка: файл {fpath} не найден!")
             return
 
@@ -1045,7 +1051,8 @@ class MainWindow(QMainWindow):
         self._ticks_loaded = False
 
         self._update_inst_label()
-        self.lbl_status.setText(f"Чтение тиков {os.path.basename(fpath)}...")
+        lbl_name = "Все дни (28.08 - 11.09)" if fpath == "ALL_DAYS" else os.path.basename(fpath)
+        self.lbl_status.setText(f"Чтение тиков {lbl_name}...")
         self.load_and_render(reload_lua=True, auto_range=True)
         self.chart_canvas.getPlotItem().autoRange()
         self.save_settings()
@@ -1152,14 +1159,15 @@ class MainWindow(QMainWindow):
     # ============================================================
     def load_and_render(self, reload_lua=True, auto_range=False):
         """Загружает тики, выполняет Lua-стратегию и инициализирует плеер."""
-        if not os.path.exists(self.default_file):
+        if self.default_file != "ALL_DAYS" and not os.path.exists(self.default_file):
             self.lbl_status.setText(f"Файл {self.default_file} не найден!")
             return
 
         self._update_inst_label()
 
         if not self._ticks_loaded:
-            self.lbl_status.setText(f"Чтение тиков {os.path.basename(self.default_file)}...")
+            lbl_name = "Все дни (28.08 - 11.09)" if self.default_file == "ALL_DAYS" else os.path.basename(self.default_file)
+            self.lbl_status.setText(f"Чтение тиков {lbl_name}...")
             self.aggregator.load_file(self.default_file)
             self._ticks_loaded = True
             n_ticks = len(self.aggregator.df_ticks)
@@ -1231,6 +1239,8 @@ class MainWindow(QMainWindow):
         self.chart_canvas.render_candles(visible_candles, auto_range=auto_range)
         self.chart_canvas.render_signal_corridor(visible_candles)
         self.chart_canvas.render_classic_fractals(visible_candles)
+        pivots = getattr(self.aggregator, "last_pivots", [])
+        self.chart_canvas.render_zigzag(pivots, visible_candles)
         self.chart_canvas.render_plateaus(visible_candles)
         self.chart_canvas.render_fractal_levels(self.last_levels, visible_candles)
         self.chart_canvas.render_structure_breaks(visible_candles)
