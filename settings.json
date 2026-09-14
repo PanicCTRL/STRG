@@ -1,5 +1,9 @@
 {
-  "current_file": "Y:\\MXU6_260828_260828.txt",
+  "current_file": [
+    "Y:/MXU6_260909_260909.txt",
+    "Y:/MXU6_260910_260910.txt",
+    "Y:/MXU6_260911_260911.txt"
+  ],
   "current_tf": "5M",
   "current_strategy": "Y:/opening_strategy/mock_opening.lua",
   "visibility": {

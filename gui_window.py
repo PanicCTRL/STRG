@@ -21,7 +21,8 @@ import pandas as pd
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QPushButton, QLabel, QFrame, QButtonGroup, QSlider, QSizePolicy,
-    QTreeWidget, QTreeWidgetItem, QComboBox, QFileDialog, QScrollArea
+    QTreeWidget, QTreeWidgetItem, QComboBox, QFileDialog, QScrollArea,
+    QDialog, QFormLayout, QMessageBox
 )
 from PyQt6.QtCore import Qt, QTimer
 import theme
@@ -30,6 +31,142 @@ from tick_aggregator import TickAggregator
 from lua_runner import LuaStrategyRunner
 
 SETTINGS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "settings.json")
+
+
+
+# ============================================================
+# Диалог выбора диапазона дат (до 5 торговых дней)
+# ============================================================
+class DateRangeDialog(QDialog):
+    """Диалог выбора диапазона торговых дат с ограничением до 5 дней для быстрой работы."""
+    def __init__(self, parent=None, single_files=None):
+        super().__init__(parent)
+        self.setWindowTitle("Выбор диапазона дат (до 5 дней)")
+        self.setFixedWidth(380)
+        self.single_files = single_files or []
+        self.selected_files = []
+        self.selected_label = ""
+        self._build_ui()
+
+    def _build_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setSpacing(10)
+
+        lbl = QLabel("Выберите диапазон торговых дней (макс. 5 дней для мгновенной загрузки):")
+        lbl.setWordWrap(True)
+        lbl.setStyleSheet("color: #cccccc; font-size: 11px;")
+        layout.addWidget(lbl)
+
+        form = QFormLayout()
+        self.combo_from = QComboBox()
+        self.combo_to = QComboBox()
+
+        for date_key, label, fpath in self.single_files:
+            d_short = label.split("[")[0].strip()
+            self.combo_from.addItem(d_short, fpath)
+            self.combo_to.addItem(d_short, fpath)
+
+        form.addRow("С даты:", self.combo_from)
+        form.addRow("По дату:", self.combo_to)
+        layout.addLayout(form)
+
+        self.lbl_info = QLabel("")
+        self.lbl_info.setStyleSheet("color: #4fc3f7; font-weight: bold; font-size: 11px;")
+        layout.addWidget(self.lbl_info)
+
+        preset_box = QHBoxLayout()
+        btn_last3 = QPushButton("Посл. 3 дня")
+        btn_last5 = QPushButton("Посл. 5 дней")
+        btn_first5 = QPushButton("Первые 5 дней")
+
+        btn_last3.clicked.connect(self._select_last_3)
+        btn_last5.clicked.connect(self._select_last_5)
+        btn_first5.clicked.connect(self._select_first_5)
+
+        preset_box.addWidget(btn_last3)
+        preset_box.addWidget(btn_last5)
+        preset_box.addWidget(btn_first5)
+        layout.addLayout(preset_box)
+
+        btn_box = QHBoxLayout()
+        btn_box.addStretch()
+        self.btn_ok = QPushButton("Загрузить")
+        self.btn_ok.setDefault(True)
+        self.btn_ok.clicked.connect(self._on_accept)
+        btn_cancel = QPushButton("Отмена")
+        btn_cancel.clicked.connect(self.reject)
+        btn_box.addWidget(btn_cancel)
+        btn_box.addWidget(self.btn_ok)
+        layout.addLayout(btn_box)
+
+        self.combo_from.currentIndexChanged.connect(self._on_from_changed)
+        self.combo_to.currentIndexChanged.connect(self._on_to_changed)
+
+        self._select_last_5()
+
+    def _select_last_3(self):
+        n = len(self.single_files)
+        if n > 0:
+            self.combo_from.setCurrentIndex(max(0, n - 3))
+            self.combo_to.setCurrentIndex(n - 1)
+
+    def _select_last_5(self):
+        n = len(self.single_files)
+        if n > 0:
+            self.combo_from.setCurrentIndex(max(0, n - 5))
+            self.combo_to.setCurrentIndex(n - 1)
+
+    def _select_first_5(self):
+        n = len(self.single_files)
+        if n > 0:
+            self.combo_from.setCurrentIndex(0)
+            self.combo_to.setCurrentIndex(min(n - 1, 4))
+
+    def _on_from_changed(self, idx):
+        to_idx = self.combo_to.currentIndex()
+        if to_idx < idx:
+            self.combo_to.blockSignals(True)
+            self.combo_to.setCurrentIndex(idx)
+            self.combo_to.blockSignals(False)
+        elif to_idx - idx + 1 > 5:
+            self.combo_to.blockSignals(True)
+            self.combo_to.setCurrentIndex(min(len(self.single_files) - 1, idx + 4))
+            self.combo_to.blockSignals(False)
+        self._update_info()
+
+    def _on_to_changed(self, idx):
+        from_idx = self.combo_from.currentIndex()
+        if idx < from_idx:
+            self.combo_from.blockSignals(True)
+            self.combo_from.setCurrentIndex(idx)
+            self.combo_from.blockSignals(False)
+        elif idx - from_idx + 1 > 5:
+            self.combo_from.blockSignals(True)
+            self.combo_from.setCurrentIndex(max(0, idx - 4))
+            self.combo_from.blockSignals(False)
+        self._update_info()
+
+    def _update_info(self):
+        f_idx = self.combo_from.currentIndex()
+        t_idx = self.combo_to.currentIndex()
+        count = max(0, t_idx - f_idx + 1)
+        self.lbl_info.setText(f"Выбрано торговых дней: {count} (макс. 5)")
+
+    def _on_accept(self):
+        f_idx = self.combo_from.currentIndex()
+        t_idx = self.combo_to.currentIndex()
+        if f_idx <= t_idx and f_idx >= 0:
+            self.selected_files = [f[2] for f in self.single_files[f_idx:t_idx + 1]]
+            d_from = self.combo_from.currentText()
+            d_to = self.combo_to.currentText()
+            n_days = len(self.selected_files)
+            if n_days == 1:
+                self.selected_label = d_from
+            else:
+                self.selected_label = f"Диапазон {d_from} - {d_to} ({n_days} дн.)"
+            self.accept()
+        else:
+            self.reject()
 
 
 class MainWindow(QMainWindow):
@@ -138,6 +275,13 @@ class MainWindow(QMainWindow):
         self.btn_browse.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.btn_browse.clicked.connect(self._on_browse_file)
         layout.addWidget(self.btn_browse)
+
+        self.btn_range = QPushButton("Диапазон дат")
+        self.btn_range.setObjectName("BtnRangeDays")
+        self.btn_range.setToolTip("Выбрать диапазон торговых дней (с даты по дату, до 5 дней)")
+        self.btn_range.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.btn_range.clicked.connect(self._on_select_date_range)
+        layout.addWidget(self.btn_range)
 
         self._populate_day_selector()
         self.combo_days.currentIndexChanged.connect(self._on_day_changed)
@@ -939,6 +1083,11 @@ class MainWindow(QMainWindow):
     # ============================================================
     def _update_inst_label(self):
         """Обновляет заголовок инструмента с датой и таймфреймом."""
+        if isinstance(self.default_file, (list, tuple)):
+            n_days = len(self.default_file)
+            lbl = getattr(self, "_custom_range_label", f"Диапазон ({n_days} дн.)")
+            self.lbl_inst.setText(f"MIX-9.26  {lbl} [{self.current_tf}]")
+            return
         if self.default_file == "ALL_DAYS":
             self.lbl_inst.setText(f"MIX-9.26  Все дни (28.08 - 11.09) [{self.current_tf}]")
             return
@@ -950,11 +1099,13 @@ class MainWindow(QMainWindow):
         else:
             self.lbl_inst.setText(f"MIX-9.26 [{self.current_tf}]")
 
-    def _scan_tick_files(self):
-        """Находит все тиковые файлы на Y:/ и в подпапках, сортирует по дате."""
+    def _get_single_tick_files(self):
+        """Находит все отдельные тиковые файлы, отсортированные по дате."""
         found = []
         seen_paths = set()
-        search_dirs = ["Y:/", "Y:/ticks", os.path.dirname(self.default_file)]
+        base_dir = self.default_file if isinstance(self.default_file, str) else (self.default_file[0] if self.default_file else "Y:/")
+        dir_cand = os.path.dirname(base_dir) if os.path.exists(base_dir) else "Y:/"
+        search_dirs = ["Y:/", "Y:/ticks", dir_cand]
 
         for d in search_dirs:
             if not os.path.exists(d):
@@ -967,7 +1118,6 @@ class MainWindow(QMainWindow):
                     seen_paths.add(norm_path)
 
                     fname = os.path.basename(norm_path)
-                    # Проверяем шаблон имени тиков
                     m = re.search(r"(\d{2})(\d{2})(\d{2})", fname)
                     if m and any(k in fname.upper() for k in ["MX", "MIX", "RI", "SI", "SPB", "SR", "GZ"]):
                         y, mth, day = m.group(1), m.group(2), m.group(3)
@@ -984,30 +1134,49 @@ class MainWindow(QMainWindow):
                             pass
 
         found.sort(key=lambda x: x[0])
-        if found:
-            found.insert(0, ("000000_ALL", "Все доступные дни подряд (28.08 - 11.09)", "ALL_DAYS"))
         return found
 
     def _populate_day_selector(self, select_path=None):
-        """Заполняет выпадающий список доступными торговыми днями."""
+        """Заполняет выпадающий список доступными торговыми днями и пресетами диапазонов."""
         if not hasattr(self, "combo_days"):
             return
         self.combo_days.blockSignals(True)
         self.combo_days.clear()
 
-        files = self._scan_tick_files()
-        target_path = os.path.normpath(select_path or self.default_file).replace("\\", "/")
+        single_files = self._get_single_tick_files()
+        target_path = os.path.normpath(select_path or (self.default_file if isinstance(self.default_file, str) else "")).replace("\\", "/")
         select_idx = 0
 
-        for i, (date_key, label, fpath) in enumerate(files):
+        # 1. Быстрые пресеты диапазонов (до 5 дней)
+        n = len(single_files)
+        if n >= 2:
+            # Последние 5 дней
+            p5_files = [f[2] for f in single_files[max(0, n - 5):n]]
+            d_start5 = single_files[max(0, n - 5)][1].split("[")[0].strip()
+            d_end5 = single_files[n - 1][1].split("[")[0].strip()
+            self.combo_days.addItem(f"[Диапазон] Посл. 5 дней ({d_start5} - {d_end5})", p5_files)
+
+            # Последние 3 дня
+            p3_files = [f[2] for f in single_files[max(0, n - 3):n]]
+            d_start3 = single_files[max(0, n - 3)][1].split("[")[0].strip()
+            self.combo_days.addItem(f"[Диапазон] Посл. 3 дня ({d_start3} - {d_end5})", p3_files)
+
+            # Первые 5 дней
+            p1_files = [f[2] for f in single_files[:min(5, n)]]
+            d_start1 = single_files[0][1].split("[")[0].strip()
+            d_end1 = single_files[min(4, n - 1)][1].split("[")[0].strip()
+            self.combo_days.addItem(f"[Диапазон] Первые 5 дней ({d_start1} - {d_end1})", p1_files)
+
+        # 2. Одиночные дни
+        for date_key, label, fpath in single_files:
+            idx = self.combo_days.count()
             self.combo_days.addItem(label, fpath)
             if os.path.normpath(fpath).replace("\\", "/") == target_path:
-                select_idx = i
+                select_idx = idx
 
-        if target_path and target_path not in [f[2] for f in files] and os.path.exists(target_path):
-            fname = os.path.basename(target_path)
-            self.combo_days.addItem(f"{fname}", target_path)
-            select_idx = self.combo_days.count() - 1
+        # 3. Все дни (тяжелый режим)
+        if n > 0:
+            self.combo_days.addItem("[Все дни подряд] (28.08 - 11.09) [11 дней, долго]", "ALL_DAYS")
 
         if self.combo_days.count() > 0:
             self.combo_days.setCurrentIndex(select_idx)
@@ -1018,20 +1187,26 @@ class MainWindow(QMainWindow):
         """Вызывается при смене выбранного дня в выпадающем списке."""
         if index < 0:
             return
-        fpath = self.combo_days.itemData(index)
-        if not fpath:
+        data = self.combo_days.itemData(index)
+        if data is None:
             return
 
-        norm_cur = os.path.normpath(self.default_file).replace("\\", "/")
-        norm_new = os.path.normpath(fpath).replace("\\", "/")
+        if isinstance(data, (list, tuple)):
+            label = self.combo_days.itemText(index).replace("📅 ", "")
+            self.switch_to_range(data, label)
+            return
+
+        norm_cur = os.path.normpath(self.default_file).replace("\\", "/") if isinstance(self.default_file, str) else ""
+        norm_new = os.path.normpath(data).replace("\\", "/")
         if norm_cur == norm_new:
             return
 
-        self.switch_to_file(fpath)
+        self.switch_to_file(data)
 
     def _on_browse_file(self):
         """Диалог выбора произвольного файла тиков через проводник."""
-        initial_dir = os.path.dirname(self.default_file) if os.path.exists(self.default_file) else "Y:/"
+        base_dir = self.default_file if isinstance(self.default_file, str) else "Y:/"
+        initial_dir = os.path.dirname(base_dir) if os.path.exists(base_dir) else "Y:/"
         file_path, _ = QFileDialog.getOpenFileName(
             self, "Выбрать файл торгового дня", initial_dir, "Файлы тиков (*.txt);;Все файлы (*.*)"
         )
@@ -1040,18 +1215,57 @@ class MainWindow(QMainWindow):
             self._populate_day_selector(select_path=norm_path)
             self.switch_to_file(norm_path)
 
+    def _on_select_date_range(self):
+        """Открывает диалог выбора произвольного диапазона торговых дат (до 5 дней)."""
+        single_files = self._get_single_tick_files()
+        if not single_files:
+            QMessageBox.information(self, "Диапазон дат", "Не найдены тиковые файлы на диске Y:/")
+            return
+
+        dlg = DateRangeDialog(self, single_files=single_files)
+        if dlg.exec():
+            if len(dlg.selected_files) == 1:
+                self.switch_to_file(dlg.selected_files[0])
+            else:
+                self.switch_to_range(dlg.selected_files, dlg.selected_label)
+
+    def switch_to_range(self, file_paths, range_label=None):
+        """Переключает STRG на сквозной диапазон торговых дней (до 5 дней)."""
+        if not file_paths:
+            return
+
+        self.pause_replay()
+        self.default_file = list(file_paths)
+        self._ticks_loaded = False
+        self._custom_range_label = range_label
+
+        self._update_inst_label()
+        lbl_name = range_label or f"Диапазон ({len(file_paths)} дн.)"
+        self.lbl_status.setText(f"Чтение тиков {lbl_name}...")
+        self.load_and_render(reload_lua=True, auto_range=True)
+        self.chart_canvas.getPlotItem().autoRange()
+        self.save_settings()
+
     def switch_to_file(self, fpath):
         """Переключает STRG на новый тиковый файл и полностью обновляет состояние."""
-        if fpath != "ALL_DAYS" and not os.path.exists(fpath):
+        is_list = isinstance(fpath, (list, tuple))
+        if not is_list and fpath != "ALL_DAYS" and not os.path.exists(fpath):
             self.lbl_status.setText(f"Ошибка: файл {fpath} не найден!")
             return
 
         self.pause_replay()
         self.default_file = fpath
         self._ticks_loaded = False
+        self._custom_range_label = None
 
         self._update_inst_label()
-        lbl_name = "Все дни (28.08 - 11.09)" if fpath == "ALL_DAYS" else os.path.basename(fpath)
+        if is_list:
+            lbl_name = f"Диапазон ({len(fpath)} дн.)"
+        elif fpath == "ALL_DAYS":
+            lbl_name = "Все дни (28.08 - 11.09)"
+        else:
+            lbl_name = os.path.basename(fpath)
+
         self.lbl_status.setText(f"Чтение тиков {lbl_name}...")
         self.load_and_render(reload_lua=True, auto_range=True)
         self.chart_canvas.getPlotItem().autoRange()
@@ -1159,14 +1373,20 @@ class MainWindow(QMainWindow):
     # ============================================================
     def load_and_render(self, reload_lua=True, auto_range=False):
         """Загружает тики, выполняет Lua-стратегию и инициализирует плеер."""
-        if self.default_file != "ALL_DAYS" and not os.path.exists(self.default_file):
+        is_list = isinstance(self.default_file, (list, tuple))
+        if not is_list and self.default_file != "ALL_DAYS" and not os.path.exists(self.default_file):
             self.lbl_status.setText(f"Файл {self.default_file} не найден!")
             return
 
         self._update_inst_label()
 
         if not self._ticks_loaded:
-            lbl_name = "Все дни (28.08 - 11.09)" if self.default_file == "ALL_DAYS" else os.path.basename(self.default_file)
+            if is_list:
+                lbl_name = getattr(self, "_custom_range_label", f"Диапазон ({len(self.default_file)} дн.)")
+            elif self.default_file == "ALL_DAYS":
+                lbl_name = "Все дни (28.08 - 11.09)"
+            else:
+                lbl_name = os.path.basename(self.default_file)
             self.lbl_status.setText(f"Чтение тиков {lbl_name}...")
             self.aggregator.load_file(self.default_file)
             self._ticks_loaded = True

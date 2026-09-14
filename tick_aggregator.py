@@ -46,16 +46,23 @@ class TickAggregator:
         full_df = pd.concat(dfs, ignore_index=True)
         full_df = full_df.sort_values("DATETIME", kind="stable").reset_index(drop=True)
         self.df_ticks = full_df
-        self.file_path = "ALL_DAYS"
         return True
 
+    def load_multiple_files(self, file_paths):
+        """Загружает список тиковых файлов и склеивает их в единый сквозной поток."""
+        return self.load_all_files(file_paths)
+
     def load_file(self, file_path=None):
-        if file_path == 'ALL_DAYS' or self.file_path == 'ALL_DAYS':
+        """Быстро загружает тиковый файл Финама, список файлов или псевдо-путь ALL_DAYS."""
+        if file_path is not None:
+            self.file_path = file_path
+
+        if isinstance(self.file_path, (list, tuple)):
+            return self.load_multiple_files(self.file_path)
+
+        if self.file_path == "ALL_DAYS":
             return self.load_all_files()
 
-        """Быстро загружает тиковый файл Финама (DATE, TIME, LAST, VOL)."""
-        if file_path:
-            self.file_path = file_path
         if not self.file_path:
             return False
 
