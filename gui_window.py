@@ -30,6 +30,8 @@ from chart_canvas import ChartCanvas
 from tick_aggregator import TickAggregator
 from lua_runner import LuaStrategyRunner
 from fractal_zigzag import calculate_fractal_zigzag
+from zigzag_calculator import ZigzagCalculator
+from regression_calculator import RegressionCalculator
 
 SETTINGS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "settings.json")
 
@@ -189,8 +191,11 @@ class MainWindow(QMainWindow):
         saved_strat = saved_settings.get("current_strategy", r"Y:\true_fractal\mock_opening.lua")
         self.strategy_file = saved_strat if os.path.exists(saved_strat) else r"Y:\true_fractal\mock_opening.lua"
         self.runner = LuaStrategyRunner(self.strategy_file)
+        self.zigzag_calc = ZigzagCalculator()
+        self.reg_calc = RegressionCalculator(price_step=25.0)
         self.last_trades = []
         self.last_levels = []
+        self.last_channel = None
         self.last_stats = {}
         self._ticks_loaded = False
 
@@ -893,6 +898,18 @@ class MainWindow(QMainWindow):
                     {"text": "Фракталы Вильямса (▲/▼)", "key": "classic_fractals", "default": True},
                     {"text": "Фрактальный Зиг-Заг (M15/M5)", "key": "fractal_zigzag", "default": True},
                     {
+                        "text": "Регрессионный тренд (TW)",
+                        "children": [
+                            {"text": "Канал регрессии", "key": "regression_channel", "default": True},
+                            {"text": "Верхняя граница (Синяя)", "key": "reg_tw_upper", "default": True},
+                            {"text": "Центральная линия (МНК)", "key": "reg_tw_mid", "default": True},
+                            {"text": "Нижняя граница (Красная)", "key": "reg_tw_lower", "default": True},
+                            {"text": "Заливка TradingView", "key": "reg_tw_fill", "default": True},
+                            {"text": "Продление вправо до краев", "key": "reg_tw_extend", "default": True},
+                            {"text": "Инфо-плашка (r, R², наклон)", "key": "reg_info", "default": True},
+                        ]
+                    },
+                    {
                         "text": "Линии плато",
                         "children": [
                             {"text": "Плато вверх (High)", "key": "plateau_high", "default": True},
@@ -1460,12 +1477,31 @@ class MainWindow(QMainWindow):
         self.chart_canvas.render_candles(visible_candles, auto_range=auto_range)
         self.chart_canvas.render_signal_corridor(visible_candles)
         self.chart_canvas.render_classic_fractals(visible_candles)
-        # Динамический калькулятор Зиг-Зага в реальном времени с привязкой к текущей формирующейся свече
-        if self.chart_canvas.visibility.get("fractal_zigzag", True) and len(visible_candles) >= 2:
-            _, pivots = calculate_fractal_zigzag(visible_candles, dev_percent=0.9, calculate_projected=True)
-        else:
-            pivots = []
-        self.chart_canvas.render_zigzag(pivots, visible_candles)
+        # Динамический калькулятор Зиг-Зага и Регрессионного тренда (TW)
+        need_zigzag = self.chart_canvas.visibility.get("fractal_zigzag", True)
+        need_reg = self.chart_canvas.visibility.get("regression_channel", True)
+
+        pivots = []
+        if (need_zigzag or need_reg) and len(visible_candles) >= 2:
+            pivots = self.zigzag_calc.calculate_zigzag(visible_candles, dev_percent=0.9)
+            if not pivots and need_zigzag:
+                _, pivots = calculate_fractal_zigzag(visible_candles, dev_percent=0.9, calculate_projected=True)
+
+        self.chart_canvas.render_zigzag(pivots if need_zigzag else [], visible_candles)
+
+        # Канал линейной регрессии по последней активной волне ЗигЗага (TradingView Style)
+        last_wave = self.zigzag_calc.last_line
+        channel = None
+        if need_reg and last_wave and "start_bar" in last_wave and "end_bar" in last_wave and len(visible_candles) >= 3:
+            channel = self.reg_calc.calculate_channel(
+                visible_candles,
+                start_bar=last_wave["start_bar"],
+                end_bar=last_wave["end_bar"],
+                k=2.0
+            )
+        self.last_channel = channel
+        self.chart_canvas.render_regression_channel(channel, visible_candles)
+
         self.chart_canvas.render_plateaus(visible_candles)
         self.chart_canvas.render_fractal_levels(self.last_levels, visible_candles)
         self.chart_canvas.render_structure_breaks(visible_candles)
@@ -1486,9 +1522,12 @@ class MainWindow(QMainWindow):
 
         tf_labels = {"1M": "1 минута", "3M": "3 минуты", "5M": "5 минут", "15M": "15 минут", "1H": "1 час"}
         self.lbl_inst.setText(f"MIX-9.26 [{tf_labels.get(self.current_tf, self.current_tf)}]")
+        reg_info_str = ""
+        if channel:
+            reg_info_str = f" | TW Тренд: r={channel['r']:+.2f}, R²={channel['r2']:.0%}, Наклон={channel['slope']:+.1f} пт"
         self.lbl_status.setText(
             f"Статус: Время {curr_time.strftime('%H:%M:%S')} | Свечей {len(visible_candles)} | "
-            f"Сделок: {len(real_trades_before)}/{len(self.last_trades)} | Перезаходов: {rem_t}/4"
+            f"Сделок: {len(real_trades_before)}/{len(self.last_trades)} | Перезаходов: {rem_t}/4{reg_info_str}"
         )
 
     # ============================================================

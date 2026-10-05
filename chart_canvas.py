@@ -129,6 +129,13 @@ class ChartCanvas(pg.PlotWidget):
             "crosshair": True,
             "classic_fractals": True,
             "fractal_zigzag": True,
+            "regression_channel": True,
+            "reg_tw_upper": True,
+            "reg_tw_lower": True,
+            "reg_tw_mid": True,
+            "reg_tw_fill": True,
+            "reg_tw_extend": True,
+            "reg_info": True,
             "plateau_high": True,
             "plateau_low": True,
             "ch0_orange_upper": True,
@@ -507,6 +514,129 @@ class ChartCanvas(pg.PlotWidget):
             badge.setPos(bx, py)
             pi.addItem(badge)
             self._chart_items.append(badge)
+
+    def render_regression_channel(self, ch, df_candles):
+        """
+        Отрисовывает канал линейной регрессии в стиле TradingView:
+        - Линии продолжаются вправо до бесконечности (до правого края холста)
+        - Верхняя половина (Mid -> Upper): синяя граница (#2962ff) + синяя полупрозрачная заливка
+        - Нижняя половина (Lower -> Mid): красная граница (#ef5350) + красная полупрозрачная заливка
+        - Центральная линия регрессии: пунктирная линия (#ef5350, DashLine)
+        - Точки на финише волны ЗигЗага и инфо-плашка (наклон, r, R2)
+        """
+        if not self.visibility.get("regression_channel", True):
+            return
+
+        if not ch:
+            return
+
+        pi = self.getPlotItem()
+
+        # Определяем, используем ли бесконечное продление вправо
+        extend_right = self.visibility.get("reg_tw_extend", True)
+        if extend_right and "x_inf" in ch:
+            vb = pi.getViewBox()
+            right_bound = vb.viewRange()[0][1] if vb else ch["x_inf"][1]
+            x_end = max(float(ch["x_inf"][1]), float(right_bound) + 150.0)
+
+            x_start = float(ch["x_inf"][0])
+            slope = float(ch["slope"])
+            intercept = float(ch["intercept"])
+            se = float(ch["std_error"])
+            k = float(ch["k"])
+
+            x_bars_end = x_end - x_start + 1
+            inf_mid = slope * x_bars_end + intercept
+            inf_up = inf_mid + k * se
+            inf_dn = inf_mid - k * se
+
+            # Округление до шага цены 25 пт
+            inf_mid_round = round(inf_mid / 25.0) * 25.0
+            inf_up_round = round(inf_up / 25.0) * 25.0
+            inf_dn_round = round(inf_dn / 25.0) * 25.0
+
+            x_coords = [x_start, x_end]
+            y_mid = [float(ch["y_inf_mid"][0]), inf_mid_round]
+            y_up = [float(ch["y_inf_upper"][0]), inf_up_round]
+            y_dn = [float(ch["y_inf_lower"][0]), inf_dn_round]
+        else:
+            x_coords = [float(vx) for vx in ch["x"]]
+            y_mid = [float(vy) for vy in ch["y_mid"]]
+            y_up = [float(vy) for vy in ch["y_upper"]]
+            y_dn = [float(vy) for vy in ch["y_lower"]]
+
+        # 1. Создаем графические перья и линии
+        pen_up = pg.mkPen(color=theme.REGRESSION_TW_BLUE, width=1.8)
+        pen_up.setCosmetic(True)
+
+        pen_dn = pg.mkPen(color=theme.REGRESSION_TW_RED, width=1.8)
+        pen_dn.setCosmetic(True)
+
+        pen_mid = pg.mkPen(color=theme.REGRESSION_TW_MID, width=1.5, style=Qt.PenStyle.DashLine)
+        pen_mid.setCosmetic(True)
+
+        curve_up = pg.PlotCurveItem(x=x_coords, y=y_up, pen=pen_up)
+        curve_mid = pg.PlotCurveItem(x=x_coords, y=y_mid, pen=pen_mid)
+        curve_dn = pg.PlotCurveItem(x=x_coords, y=y_dn, pen=pen_dn)
+
+        # 2. Двухцветная заливка TradingView:
+        # Верхняя половина (синяя) и нижняя половина (красная)
+        if self.visibility.get("reg_tw_fill", True):
+            brush_blue = pg.mkBrush(*theme.REGRESSION_TW_BLUE_FILL)
+            fill_upper = pg.FillBetweenItem(curve_up, curve_mid, brush=brush_blue)
+            pi.addItem(fill_upper)
+            self._chart_items.append(fill_upper)
+
+            brush_red = pg.mkBrush(*theme.REGRESSION_TW_RED_FILL)
+            fill_lower = pg.FillBetweenItem(curve_mid, curve_dn, brush=brush_red)
+            pi.addItem(fill_lower)
+            self._chart_items.append(fill_lower)
+
+        # 3. Добавляем линии в соответствии с тумблерами видимости
+        if self.visibility.get("reg_tw_upper", True):
+            pi.addItem(curve_up)
+            self._chart_items.append(curve_up)
+
+        if self.visibility.get("reg_tw_lower", True):
+            pi.addItem(curve_dn)
+            self._chart_items.append(curve_dn)
+
+        if self.visibility.get("reg_tw_mid", True):
+            pi.addItem(curve_mid)
+            self._chart_items.append(curve_mid)
+
+        # 4. Маркеры на окончании базовой волны (без текстового шума)
+        curr_x = float(ch["x"][1])
+        for py, color_hex, symbol in [
+            (float(ch["curr_upper_round"]), theme.REGRESSION_TW_BLUE, "o"),
+            (float(ch["curr_mid_round"]), theme.REGRESSION_TW_MID, "s"),
+            (float(ch["curr_lower_round"]), theme.REGRESSION_TW_RED, "o"),
+        ]:
+            dot = pg.ScatterPlotItem(
+                x=[curr_x], y=[py], symbol=symbol, size=7,
+                pen=pg.mkPen(color="#111111", width=1.2),
+                brush=pg.mkBrush(color_hex)
+            )
+            pi.addItem(dot)
+            self._chart_items.append(dot)
+
+        # 5. Информационная плашка параметров тренда (наклон, Пирсон r, R2)
+        if self.visibility.get("reg_info", True):
+            r_val = float(ch["r"])
+            slope_val = float(ch["slope"])
+            r2_val = float(ch["r2"])
+            info_text = f" r = {r_val:+.3f} | R² = {r2_val:.1%} | наклон: {slope_val:+.1f} пт/бар "
+            info_badge = pg.TextItem(
+                text=info_text,
+                color="#ffffff",
+                fill=pg.mkBrush(16, 20, 32, 230),
+                border=pg.mkPen(theme.REGRESSION_TW_BLUE, width=1.0),
+                anchor=(0.0, 1.2)
+            )
+            info_badge.setFont(QFont("Tahoma", 8, QFont.Weight.Bold))
+            info_badge.setPos(float(ch["x"][0]), float(ch["y_upper"][0]))
+            pi.addItem(info_badge)
+            self._chart_items.append(info_badge)
 
     def render_plateaus(self, df_candles):
         """
