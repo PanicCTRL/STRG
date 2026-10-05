@@ -935,7 +935,7 @@ class MainWindow(QMainWindow):
                                 ]
                             },
                             {
-                                "text": "Вильямс с расширением плато",
+                                "text": "Vil+Plato Extension",
                                 "children": [
                                     {"text": "Верхняя граница (High)", "key": "ch4_cyan_upper", "default": True},
                                     {"text": "Нижняя граница (Low)", "key": "ch4_cyan_lower", "default": True},
