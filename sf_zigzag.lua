@@ -7,7 +7,6 @@ function CalculateZigzag(high, low, dev_percent)
     end
 
     local dev_frac  = dev_percent / 100
-    local dev_val   = low[1] * dev_frac
     local trendDir  = 0
     local lineStart = 0
     local lineEnd   = 0
@@ -15,14 +14,24 @@ function CalculateZigzag(high, low, dev_percent)
     local endBar    = 0
 
     -- ========================================================================
-    -- 1. Первичный поиск импульса от открытия дня
+    -- 1. Первичный поиск импульса: отслеживаем экстремумы до первого deviation
     -- ========================================================================
+    local maxVal = high[1]
+    local maxBar = 1
+    local minVal = low[1]
+    local minBar = 1
+
     for i = 2, #high do
-        if high[i] - low[1] >= dev_val then
-            trendDir, lineStart, lineEnd, endBar = 1, low[1], high[i], i
-            break
-        elseif high[1] - low[i] >= dev_val then
-            trendDir, lineStart, lineEnd, endBar = -1, high[1], low[i], i
+        if high[i] > maxVal then maxVal, maxBar = high[i], i end
+        if low[i]  < minVal then minVal, minBar = low[i],  i end
+
+        local dev_val = minVal * dev_frac
+        if maxVal - minVal >= dev_val then
+            trendDir  = (maxBar > minBar) and 1 or -1
+            lineStart = (trendDir == 1) and minVal or maxVal
+            startBar  = (trendDir == 1) and minBar or maxBar
+            lineEnd   = (trendDir == 1) and maxVal or minVal
+            endBar    = (trendDir == 1) and maxBar or minBar
             break
         end
     end
@@ -32,35 +41,7 @@ function CalculateZigzag(high, low, dev_percent)
     end
 
     -- ========================================================================
-    -- 2. Уточнение истинного старта и пересчет конца первой волны
-    -- ========================================================================
-    local isUp = (trendDir == 1)
-    local ext  = isUp and low or high
-    local cmp  = isUp and function(a, b) return a < b end
-                       or function(a, b) return a > b end
-
-    -- А) Истинный экстремум на участке [1..endBar]
-    local bestVal, bestIdx = ext[1], 1
-    for k = 2, endBar do
-        if cmp(ext[k], bestVal) then
-            bestVal, bestIdx = ext[k], k
-        end
-    end
-    lineStart, startBar = bestVal, bestIdx
-
-    -- Б) Первый бар от startBar, дающий импульс >= deviation
-    local target = isUp and high or low
-    local target_dev = lineStart * dev_frac
-    for k = startBar, #target do
-        local diff = isUp and (target[k] - lineStart) or (lineStart - target[k])
-        if diff >= target_dev then
-            lineEnd, endBar = target[k], k
-            break
-        end
-    end
-
-    -- ========================================================================
-    -- 3. Продолжение ЗигЗага по следующим свечам (от endBar + 1 до конца)
+    -- 2. Продолжение ЗигЗага по следующим свечам (от endBar + 1 до конца)
     -- ========================================================================
     local allPivots = {}
 
