@@ -26,7 +26,7 @@ function CalculateZigzag(high, low, dev_percent)
         if low[i]  < minVal then minVal, minBar = low[i],  i end
 
         local dev_val = minVal * dev_frac
-        if maxVal - minVal >= dev_val then
+        if maxVal - minVal >= dev_val and maxBar ~= minBar then
             trendDir  = (maxBar > minBar) and 1 or -1
             lineStart = (trendDir == 1) and minVal or maxVal
             startBar  = (trendDir == 1) and minBar or maxBar
