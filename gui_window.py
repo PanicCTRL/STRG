@@ -1490,15 +1490,21 @@ class MainWindow(QMainWindow):
         self.chart_canvas.render_zigzag(pivots if need_zigzag else [], visible_candles)
 
         # Канал линейной регрессии по последней активной волне ЗигЗага (TradingView Style)
+        # Строится строго по закрытым свечам, исключая текущую формирующуюся (дышащую)
         last_wave = self.zigzag_calc.last_line
         channel = None
         if need_reg and last_wave and "start_bar" in last_wave and "end_bar" in last_wave and len(visible_candles) >= 3:
-            channel = self.reg_calc.calculate_channel(
-                visible_candles,
-                start_bar=last_wave["start_bar"],
-                end_bar=last_wave["end_bar"],
-                k=2.0
-            )
+            closed_candles = visible_candles.iloc[:-1] if len(visible_candles) > 1 else visible_candles
+            closed_end_bar = min(int(last_wave["end_bar"]), len(closed_candles))
+            start_bar = int(last_wave["start_bar"])
+
+            if closed_end_bar - start_bar + 1 >= 3:
+                channel = self.reg_calc.calculate_channel(
+                    closed_candles,
+                    start_bar=start_bar,
+                    end_bar=closed_end_bar,
+                    k=2.0
+                )
         self.last_channel = channel
         self.chart_canvas.render_regression_channel(channel, visible_candles)
 
