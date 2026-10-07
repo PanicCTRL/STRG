@@ -153,6 +153,9 @@ class ChartCanvas(pg.PlotWidget):
             "ch4_cyan_upper": True,
             "ch4_cyan_lower": True,
             "ch4_cyan_fill": True,
+            "ch5_gold_upper": True,
+            "ch5_gold_lower": True,
+            "ch5_gold_fill": True,
             "corridor_upper": True,
             "corridor_lower": True,
             "corridor_fill": True,
@@ -820,13 +823,19 @@ class ChartCanvas(pg.PlotWidget):
         ch4_l = self.visibility.get("ch4_cyan_lower", True)
         ch4_f = self.visibility.get("ch4_cyan_fill", True)
 
+        # Фильтры видимости Канала 5 (Золотой: Full Extension 3B + SL)
+        ch5_u = self.visibility.get("ch5_gold_upper", True)
+        ch5_l = self.visibility.get("ch5_gold_lower", True)
+        ch5_f = self.visibility.get("ch5_gold_fill", True)
+
         any_ch0 = ch0_u or ch0_l or ch0_f
         any_ch1 = ch1_u or ch1_l or ch1_f
         any_ch2 = ch2_u or ch2_l or ch2_f
         any_ch3 = ch3_u or ch3_l or ch3_f
         any_ch4 = ch4_u or ch4_l or ch4_f
+        any_ch5 = ch5_u or ch5_l or ch5_f
 
-        if not any_ch0 and not any_ch1 and not any_ch2 and not any_ch3 and not any_ch4:
+        if not any_ch0 and not any_ch1 and not any_ch2 and not any_ch3 and not any_ch4 and not any_ch5:
             return
 
         if df_candles is None or len(df_candles) < 3:
@@ -843,12 +852,13 @@ class ChartCanvas(pg.PlotWidget):
         f_up_vals = df_candles["fractal_up"].values if has_f_up else None
         f_down_vals = df_candles["fractal_down"].values if has_f_down else None
 
-        # События для 5 каналов
+        # События для 6 каналов
         ch0_upper_events, ch0_lower_events = [], []
         ch1_upper_events, ch1_lower_events = [], []
         ch2_upper_events, ch2_lower_events = [], []
         ch3_upper_events, ch3_lower_events = [], []
         ch4_upper_events, ch4_lower_events = [], []
+        ch5_upper_events, ch5_lower_events = [], []
 
         last_high = None
         last_low = None
@@ -861,6 +871,10 @@ class ChartCanvas(pg.PlotWidget):
         # Для Канала 4 (Вильямс с расширением за счет внешних плато)
         ch4_cur_high = None
         ch4_cur_low = None
+
+        # Для Канала 5 (Full Extension: Вильямс + плато + 3-баровые микрофракталы)
+        ch5_cur_high = None
+        ch5_cur_low = None
 
         for i in range(n):
             c_high = float(highs[i])
@@ -879,6 +893,10 @@ class ChartCanvas(pg.PlotWidget):
                 ch4_cur_high = p
                 ch4_upper_events.append((b_idx, ch4_cur_high))
 
+                # Канал 5 (Full Extension: 3B + SL): базовый уровень фрактала
+                ch5_cur_high = p
+                ch5_upper_events.append((b_idx, ch5_cur_high))
+
                 # Канал 2 (Диапазонный): расширяет верх при новом максимуме
                 if env_high is None or p >= env_high:
                     env_high = p
@@ -895,6 +913,10 @@ class ChartCanvas(pg.PlotWidget):
                 # Канал 4 (Вильямс с расширением плато): базовый уровень фрактала
                 ch4_cur_low = p
                 ch4_lower_events.append((b_idx, ch4_cur_low))
+
+                # Канал 5 (Full Extension: 3B + SL): базовый уровень фрактала
+                ch5_cur_low = p
+                ch5_lower_events.append((b_idx, ch5_cur_low))
 
                 # Канал 2 (Диапазонный): расширяет низ при новом минимуме
                 if env_low is None or p <= env_low:
@@ -915,6 +937,11 @@ class ChartCanvas(pg.PlotWidget):
                         ch4_cur_high = p
                         ch4_upper_events.append((b_idx, ch4_cur_high))
 
+                    # Канал 5: расширяется только если плато ВЫШЕ текущей верхней границы
+                    if ch5_cur_high is None or p > ch5_cur_high:
+                        ch5_cur_high = p
+                        ch5_upper_events.append((b_idx, ch5_cur_high))
+
                 if lows[i] == lows[i - 1] and lows[i] > 0:
                     p = float(lows[i])
                     b_idx = float(bar_indices[i - 1])
@@ -926,6 +953,29 @@ class ChartCanvas(pg.PlotWidget):
                     if ch4_cur_low is None or p < ch4_cur_low:
                         ch4_cur_low = p
                         ch4_lower_events.append((b_idx, ch4_cur_low))
+
+                    # Канал 5: расширяется только если плато НИЖЕ текущей нижней границы
+                    if ch5_cur_low is None or p < ch5_cur_low:
+                        ch5_cur_low = p
+                        ch5_lower_events.append((b_idx, ch5_cur_low))
+
+            # 2.1. 3-баровые микрофракталы (для Канала 5: Full Extension)
+            if i >= 2:
+                # Шпилька вверх (High на i-1 выше i-2 и выше i)
+                if highs[i - 1] > highs[i - 2] and highs[i - 1] > highs[i]:
+                    p_m = float(highs[i - 1])
+                    b_m = float(bar_indices[i - 1])
+                    if ch5_cur_high is None or p_m > ch5_cur_high:
+                        ch5_cur_high = p_m
+                        ch5_upper_events.append((b_m, ch5_cur_high))
+
+                # Шпилька вниз (Low на i-1 ниже i-2 и ниже i)
+                if lows[i - 1] < lows[i - 2] and lows[i - 1] < lows[i]:
+                    p_m = float(lows[i - 1])
+                    b_m = float(bar_indices[i - 1])
+                    if ch5_cur_low is None or p_m < ch5_cur_low:
+                        ch5_cur_low = p_m
+                        ch5_lower_events.append((b_m, ch5_cur_low))
 
             # 3. CHoCH (Слом структуры)
             if last_low and c_low < last_low["price"] and current_trend != "BEAR":
@@ -1002,6 +1052,14 @@ class ChartCanvas(pg.PlotWidget):
                 pi, ch4_upper_events, ch4_lower_events, bar_indices, last_bar_x,
                 theme.CH4_CYAN_UPPER, theme.CH4_CYAN_LOWER, theme.CH4_CYAN_FILL,
                 ch4_u, ch4_l, ch4_f
+            )
+
+        # 5. Отрисовка Канала 5 (Золотой: Full Extension 3B + SL)
+        if any_ch5:
+            self._draw_corridor_channel(
+                pi, ch5_upper_events, ch5_lower_events, bar_indices, last_bar_x,
+                theme.CH5_GOLD_UPPER, theme.CH5_GOLD_LOWER, theme.CH5_GOLD_FILL,
+                ch5_u, ch5_l, ch5_f
             )
 
     def render_fractal_levels(self, levels, df_candles):

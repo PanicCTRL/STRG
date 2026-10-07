@@ -959,6 +959,14 @@ class MainWindow(QMainWindow):
                                     {"text": "Заливка коридора", "key": "ch4_cyan_fill", "default": True},
                                 ]
                             },
+                            {
+                                "text": "Full Extension (3B + SL)",
+                                "children": [
+                                    {"text": "Верхняя граница (High)", "key": "ch5_gold_upper", "default": True},
+                                    {"text": "Нижняя граница (Low)", "key": "ch5_gold_lower", "default": True},
+                                    {"text": "Заливка коридора", "key": "ch5_gold_fill", "default": True},
+                                ]
+                            },
                         ]
                     },
                 ]
